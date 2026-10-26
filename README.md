@@ -13,6 +13,12 @@ Saison est pensée d'abord pour le téléphone et s'installe comme une app :
 
 Une fois installée, elle s'ouvre en plein écran et fonctionne même avec une connexion faible.
 
+## Comptes et recommandations
+
+- **Comptes** : connexion Google ou e-mail, séries synchronisées entre appareils (Firebase). À activer une fois : voir [FIREBASE.md](FIREBASE.md). Sans configuration, l'app fonctionne sans compte.
+- **Questionnaire** à la première ouverture (genres, ambiance, format, langues, plateformes, coups de cœur), modifiable dans Réglages › Mes goûts.
+- **Recommandations « Pour vous »** calculées sur l'appareil à partir du profil, de la bibliothèque et de `catalog.json` (séries les plus suivies de TVmaze). Pour le mettre à jour : `node scripts/build-catalog.js`.
+
 ## Lancer en local
 
 ```bash
@@ -43,6 +49,8 @@ Une série absente du catalogue peut être ajoutée manuellement.
 - `index.html` : structure
 - `styles.css` : design (thèmes sombre et clair)
 - `app.js` : logique (état, catalogue, épisodes, calendrier, rappels)
+- `cloud.js`, `firebase-config.js`, `firestore.rules` : comptes et synchronisation
+- `catalog.json`, `scripts/build-catalog.js` : catalogue pour les recommandations
 - `sw.js` : mise en cache pour l'usage hors connexion
 - `manifest.webmanifest`, `icons/` : installation sur l'écran d'accueil
 - `serve.js` : petit serveur local

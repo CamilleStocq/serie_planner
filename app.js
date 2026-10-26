@@ -186,22 +186,35 @@ function normalize(d) {
   for (const p of base.platforms) if (!ids.has(p.id)) out.platforms.push(p);
   for (const p of out.platforms) { const def = base.platforms.find(b => b.id === p.id); if (def && !p.domain) p.domain = def.domain; }
   if ((d.settings || {}).themeV !== 2) { out.settings.theme = 'light'; out.settings.themeV = 2; }
+  out.dismissed = Array.isArray(d.dismissed) ? d.dismissed : [];
   out.shows = (d.shows || []).map(normShow);
   return out;
 }
-function load() {
+const LAST_USER_KEY = 'saison:lastUser';
+const GUEST_KEY = 'saison:guest';
+const CLOUD_ON = !!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
+let account = null;            // { uid, email, name, photo } une fois connecté
+let authState = CLOUD_ON ? 'pending' : 'off';
+let authTimer = 0;
+const storeKey = () => (account ? `${STORE_KEY}:${account.uid}` : STORE_KEY);
+function readStore(key) {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    return raw ? normalize(JSON.parse(raw)) : defaultState();
+    const raw = localStorage.getItem(key);
+    return raw ? normalize(JSON.parse(raw)) : null;
   } catch (err) {
     console.error(err);
-    return defaultState();
+    return null;
   }
+}
+function load() { return readStore(storeKey()) || defaultState(); }
+function persistLocal() {
+  try { localStorage.setItem(storeKey(), JSON.stringify(state)); } catch { /* signalé par save() */ }
 }
 let saveFailed = false;
 function save() {
+  if (account && window.cloud) window.cloud.queueSync();
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    localStorage.setItem(storeKey(), JSON.stringify(state));
     saveFailed = false;
   } catch (err) {
     if (!saveFailed) toast("Impossible d'enregistrer : le stockage du navigateur est indisponible ou plein. Exportez une sauvegarde depuis les Réglages.", { type: 'error', timeout: 9000 });
@@ -217,6 +230,11 @@ const ui = {
   cal: { range: 'week' },
   openSeasons: {},
   epView: 'grid',
+  sync: 'ok',
+  guest: (() => { try { return localStorage.getItem(GUEST_KEY) === '1'; } catch { return false; } })(),
+  authMode: 'signup',
+  authError: '',
+  ob: null,
   expandOverview: false,
   add: null,
   draft: null,
@@ -373,24 +391,31 @@ function showSubline(show, st) {
 const NAV = [
   { id: 'home', label: 'Accueil', ic: 'home' },
   { id: 'library', label: 'Bibliothèque', ic: 'library' },
+  { id: 'discover', label: 'Découvrir', ic: 'sparkle' },
   { id: 'calendar', label: 'Calendrier', ic: 'calendar' },
   { id: 'settings', label: 'Réglages', ic: 'settings' },
 ];
+function avatarHTML(size = '') {
+  const name = state.profile?.name || account?.name || '';
+  if (account?.photo) return `<span class="avatar ${size}"><img src="${esc(account.photo)}" alt="" referrerpolicy="no-referrer"></span>`;
+  return `<span class="avatar ${size}" style="--h:${hueOf(name || 'S')}">${esc((name || '?').slice(0, 1).toUpperCase())}</span>`;
+}
 function renderNav() {
   const active = ui.route.name === 'show' ? 'library' : ui.route.name;
   const fresh = collectReleases().fresh.length;
   const badge = id => (id === 'calendar' && fresh ? `<span class="nav-badge" title="${plural(fresh, 'nouvel épisode', 'nouveaux épisodes')}">${fresh}</span>` : '');
   $('#sideNav').innerHTML = NAV.map(n => `<a class="nav-link ${active === n.id ? 'active' : ''}" href="#/${n.id}" ${active === n.id ? 'aria-current="page"' : ''}>${icon(n.ic)}${n.label}${badge(n.id)}</a>`).join('');
-  const items = NAV.map(n => `<a class="bn-link ${active === n.id ? 'active' : ''}" href="#/${n.id}" ${active === n.id ? 'aria-current="page"' : ''}>${icon(n.ic)}${n.label}${badge(n.id)}</a>`);
+  const items = NAV.filter(n => n.id !== 'settings').map(n => `<a class="bn-link ${active === n.id ? 'active' : ''}" href="#/${n.id}" ${active === n.id ? 'aria-current="page"' : ''}>${icon(n.ic)}${n.label}${badge(n.id)}</a>`);
   items.splice(2, 0, `<button class="bn-add" data-act="add-open" aria-label="Ajouter une série">${icon('plus')}</button>`);
   $('#bottomNav').innerHTML = items.join('');
+  $('#topAvatar').innerHTML = `<a class="top-avatar ${active === 'settings' ? 'active' : ''}" href="#/settings" aria-label="Mon compte et réglages">${avatarHTML()}</a>`;
   const dark = document.documentElement.dataset.theme === 'dark';
   $('#themeToggle').innerHTML = `${icon(dark ? 'sun' : 'moon')}${dark ? 'Mode clair' : 'Mode sombre'}`;
 }
 
 function parseRoute() {
   const [name, id] = location.hash.replace(/^#\/?/, '').split('/');
-  const valid = ['home', 'library', 'calendar', 'settings', 'show'];
+  const valid = ['home', 'library', 'calendar', 'settings', 'show', 'discover', 'welcome', 'auth'];
   return { name: valid.includes(name) ? name : 'home', id: id ? decodeURIComponent(id) : null };
 }
 
@@ -402,14 +427,33 @@ function render() {
   ui.lastRouteKey = key;
   const v = $('#view');
   const y = window.scrollY;
-  const views = { home: viewHome, library: viewLibrary, calendar: viewCalendar, settings: viewSettings, show: () => viewShow(ui.route.id) };
+  // Écrans plein écran : attente de connexion, connexion, questionnaire
+  let full = null;
+  if (authState === 'pending') full = splashHTML;
+  else if (authState === 'out' && !ui.guest) full = viewAuth;
+  else if (ui.route.name === 'welcome' || (!state.profile?.done && ui.route.name !== 'settings')) full = viewOnboarding;
+  document.body.classList.toggle('fullscreen', !!full);
+  if (full) {
+    const y0 = window.scrollY;
+    v.innerHTML = full();
+    const fk = full.name + ':' + (ui.ob?.step ?? '');
+    if (fk !== ui.lastFullKey) { window.scrollTo(0, 0); v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); }
+    else { v.classList.remove('enter'); window.scrollTo(0, y0); }
+    ui.lastFullKey = fk;
+    v.dataset.full = full.name;
+    return;
+  }
+  v.dataset.full = '';
+  if (ui.lastFullKey) { ui.lastFullKey = ''; v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); window.scrollTo(0, 0); }
+  if (ui.route.name === 'auth' || ui.route.name === 'welcome') { location.replace('#/home'); return; }
+  const views = { home: viewHome, library: viewLibrary, calendar: viewCalendar, settings: viewSettings, discover: viewDiscover, show: () => viewShow(ui.route.id) };
   v.innerHTML = views[ui.route.name]();
   if (ui.route.name === 'library') renderLibGrid();
   renderNav();
   if (changed) {
     window.scrollTo(0, 0);
     v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
-    document.title = { home: 'Saison', library: 'Bibliothèque · Saison', calendar: 'Calendrier · Saison', settings: 'Réglages · Saison', show: (getShow(ui.route.id)?.title || 'Série') + ' · Saison' }[ui.route.name];
+    document.title = { home: 'Saison', library: 'Bibliothèque · Saison', calendar: 'Calendrier · Saison', settings: 'Réglages · Saison', discover: 'Découvrir · Saison', show: (getShow(ui.route.id)?.title || 'Série') + ' · Saison' }[ui.route.name];
   } else {
     v.classList.remove('enter');
     window.scrollTo(0, y);
@@ -429,7 +473,7 @@ function viewHome() {
       <div class="welcome-actions"><button class="btn primary lg" data-act="add-open">${icon('search')}Rechercher une série</button>
       <button class="btn ghost" data-act="add-open" data-tab="manual">Ajouter à la main</button></div>
       <p class="help">Titres en français ou en version originale, séries du monde entier.</p>
-    </section>`;
+    </section>${recsSectionHTML(12)}`;
   }
 
   const now = new Date();
@@ -459,7 +503,7 @@ function viewHome() {
   const plannedHTML = planned.length ? `<section class="section"><div class="section-head"><h2 class="section-title">À commencer</h2><a class="section-link" href="#/library" data-act="lib-goto" data-cat="planned">Tout voir ${icon('chevron', 'sm')}</a></div>
     <div class="grid">${planned.map(({ s, st }) => cardHTML(s, st, false)).join('')}</div></section>` : '';
 
-  return head + weekStrip(rel) + `<section class="section"><div class="section-head"><h2 class="section-title">À regarder maintenant</h2></div>${resumeHTML}</section>` + upcomingHTML + plannedHTML;
+  return head + weekStrip(rel) + `<section class="section"><div class="section-head"><h2 class="section-title">À regarder maintenant</h2></div>${resumeHTML}</section>` + recsSectionHTML(12) + upcomingHTML + plannedHTML;
 }
 function featureCard(s, st) {
   const e = st.next;
@@ -1498,12 +1542,34 @@ function installPanelHTML() {
   return `<section class="panel"><div class="panel-title">Installer sur le téléphone</div>${body}</section>`;
 }
 
+function accountPanelHTML() {
+  if (account) {
+    return `<section class="panel account"><div class="account-row">${avatarHTML('lg')}<div class="account-id"><b>${esc(state.profile?.name || account.name || 'Mon compte')}</b><span>${esc(account.email)}</span></div></div>
+      <div class="set-row"><div><div class="label">Synchronisation</div><p>Vos séries sont enregistrées dans votre compte et sur cet appareil.</p></div>${syncBadge()}</div>
+      <div class="set-row"><div><div class="label">Changer d'appareil</div><p>Connectez-vous avec le même compte : tout est déjà là.</p></div><button class="btn" data-act="sign-out">Se déconnecter</button></div></section>`;
+  }
+  if (CLOUD_ON) {
+    return `<section class="panel account"><div class="panel-title">Mon compte</div>
+      <div class="set-row"><div><div class="label">Vous utilisez Saison sans compte</div><p>Créez un compte pour retrouver vos séries sur tous vos appareils. Ce qui est déjà ici sera conservé.</p></div><button class="btn primary" data-act="auth-open">Créer un compte</button></div></section>`;
+  }
+  return '';
+}
+function tastePanelHTML() {
+  const p = state.profile || {};
+  const chips = (p.genres || []).map(g => `<span class="chip">${esc((TASTE_GENRES.find(t => t[0] === g) || [, ''])[1])} ${esc(genreFr(g))}</span>`).join('');
+  return `<section class="panel"><div class="panel-title">Mes goûts</div>
+    ${p.done && !p.skipped ? `<div class="taste"><span class="ob-badge sm">${esc(personaOf(p))}</span><div class="taste-chips">${chips}</div></div>` : '<p class="help" style="font-size:15px">Répondez à quelques questions pour recevoir des recommandations sur mesure.</p>'}
+    <div style="margin-top:14px"><button class="btn" data-act="ob-start">${icon('sparkle')}${p.done && !p.skipped ? 'Refaire le questionnaire' : 'Répondre au questionnaire'}</button></div></section>`;
+}
+
 /* ---------- Vue : Réglages ---------- */
 function viewSettings() {
   const S = state.settings;
   const used = id => state.shows.filter(s => s.platforms.some(x => x.pid === id)).length;
   return `<header class="page-head"><div><h1 class="page-title">Réglages</h1><p class="page-sub">Vos données restent dans ce navigateur.</p></div></header>
   <div class="settings">
+    ${accountPanelHTML()}
+    ${tastePanelHTML()}
     ${isStandalone() ? '' : installPanelHTML()}
     <section class="panel"><div class="panel-title">Catalogue de séries</div>
       <p class="status-line ok">${icon('check', 'sm')}Connecté au catalogue TVmaze : aucune clé ni compte nécessaire.</p>
@@ -1745,9 +1811,503 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* =========================================================
+   Comptes, questionnaire et recommandations
+   ========================================================= */
+
+/* ---------- Pont avec cloud.js ---------- */
+window.SaisonApp = {
+  getState: () => state,
+  applyRemote(data) {
+    state = normalize({ ...data, notified: state.notified });
+    persistLocal(); applyTheme(); safeRender();
+  },
+  applyRemoteShows(upserts, removed) {
+    for (const raw of upserts) {
+      const s = normShow(raw);
+      const i = state.shows.findIndex(x => x.id === s.id);
+      if (i >= 0) state.shows[i] = s; else state.shows.unshift(s);
+    }
+    if (removed.length) state.shows = state.shows.filter(s => !removed.includes(s.id));
+    persistLocal(); safeRender();
+  },
+  applyRemoteMeta(meta) {
+    state = normalize({ ...state, ...meta, shows: state.shows, notified: state.notified });
+    persistLocal(); applyTheme(); safeRender();
+  },
+  onAuth(u) {
+    clearTimeout(authTimer);
+    if (u === undefined) { authState = 'off'; safeRender(true); return; }
+    if (u === null) { account = null; authState = 'out'; safeRender(true); return; }
+    const switching = !account || account.uid !== u.uid;
+    account = u;
+    authState = 'in';
+    try { localStorage.setItem(LAST_USER_KEY, JSON.stringify(u)); } catch { /* stockage indisponible */ }
+    if (switching) {
+      const cached = readStore(storeKey());
+      if (cached) state = cached; // sinon : on garde les données de l'appareil, envoyées au premier passage
+      if (u.name && !state.profile?.name) state.profile = { ...(state.profile || {}), name: u.name.split(' ')[0] };
+      persistLocal(); applyTheme();
+    }
+    if (ui.route.name === 'auth' || location.hash === '#/auth') location.hash = '#/home';
+    safeRender(true);
+  },
+  setSyncStatus(s) { ui.sync = s; const el = $('#syncState'); if (el) el.outerHTML = syncBadge(); },
+  authError(msg) { ui.authError = msg; safeRender(true); },
+};
+function safeRender(force = false) {
+  if (!force && (modal.open || document.activeElement?.matches('input, textarea, select'))) return;
+  render();
+}
+function syncBadge() {
+  const map = { ok: ['ok', 'Synchronisé'], sync: ['info', 'Synchronisation…'], error: ['warn', 'Hors ligne : synchronisation en attente'] };
+  const [cls, txt] = map[ui.sync] || map.ok;
+  return `<span id="syncState" class="chip ${cls}"><span class="dot"></span>${txt}</span>`;
+}
+
+/* ---------- Écran de connexion ---------- */
+function viewAuth() {
+  const signup = ui.authMode !== 'signin';
+  const posters = (catalogCache || []).slice(0, 18);
+  if (!catalogCache) loadCatalog().then(() => { if (ui.route.name === 'auth' || authState === 'out') safeRender(); });
+  return `<section class="auth">
+    <div class="auth-wall" aria-hidden="true">${posters.map((c, i) => `<img src="${CATALOG_IMG}${esc(c.i)}" alt="" style="--d:${(i % 6) * 0.6}s" loading="lazy">`).join('')}</div>
+    <div class="auth-card">
+      <span class="brand-mark big" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7v10l8-5z"/></svg></span>
+      <h1 class="auth-title">Toutes vos séries, au même endroit.</h1>
+      <p class="auth-sub">${signup ? 'Créez votre compte pour retrouver vos séries sur tous vos appareils.' : 'Content de vous revoir.'}</p>
+      ${ui.authError ? `<p class="auth-error" role="alert">${icon('info', 'sm')}${esc(ui.authError)}</p>` : ''}
+      <button class="btn google lg" data-act="auth-google">${googleIcon()}Continuer avec Google</button>
+      <div class="or"><span>ou avec votre e-mail</span></div>
+      <form id="authForm" class="auth-form" novalidate>
+        ${signup ? `<div class="field"><label for="aName">Prénom</label><input id="aName" name="name" class="input" autocomplete="given-name" placeholder="Camille"></div>` : ''}
+        <div class="field"><label for="aEmail">E-mail</label><input id="aEmail" name="email" type="email" class="input" autocomplete="email" inputmode="email" required></div>
+        <div class="field"><label for="aPass">Mot de passe</label><input id="aPass" name="password" type="password" class="input" autocomplete="${signup ? 'new-password' : 'current-password'}" required minlength="6">${signup ? '<p class="help">6 caractères minimum.</p>' : ''}</div>
+        <button class="btn primary lg" type="submit">${signup ? 'Créer mon compte' : 'Me connecter'}</button>
+      </form>
+      <p class="auth-switch">${signup ? 'Déjà un compte ?' : 'Pas encore de compte ?'} <button class="link-btn" data-act="auth-mode">${signup ? 'Se connecter' : 'Créer un compte'}</button></p>
+      ${signup ? '' : '<button class="link-btn" data-act="auth-reset">Mot de passe oublié ?</button>'}
+      <button class="btn ghost" data-act="auth-guest">Essayer sans compte</button>
+    </div>
+  </section>`;
+}
+function googleIcon() {
+  return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="stroke:none"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.3c1.9-1.8 2.9-4.4 2.9-7.3z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.7-2.5l-3.3-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3v2.6A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.4 13.9a6 6 0 0 1 0-3.8V7.5H3a10 10 0 0 0 0 9z"/><path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3 7.5l3.4 2.6C7.2 7.8 9.4 6 12 6z"/></svg>';
+}
+function splashHTML() {
+  return `<section class="splash"><span class="brand-mark big" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7v10l8-5z"/></svg></span><div class="spinner"></div></section>`;
+}
+
+/* ---------- Catalogue pour les recommandations ---------- */
+const CATALOG_IMG = 'https://static.tvmaze.com/uploads/images/';
+let catalogCache = null, catalogPromise = null;
+function loadCatalog() {
+  if (catalogCache) return Promise.resolve(catalogCache);
+  catalogPromise ||= fetch('catalog.json').then(r => r.json()).then(d => (catalogCache = d.shows || [])).catch(() => (catalogCache = []));
+  return catalogPromise;
+}
+const GENRE_EN = Object.fromEntries(Object.entries(GENRES_FR).map(([en, fr]) => [norm(fr), en]));
+const genreFr = g => GENRES_FR[g] || g;
+
+const TASTE_GENRES = [
+  ['Drama', '🎭'], ['Comedy', '😂'], ['Thriller', '🔪'], ['Crime', '🕵️'], ['Science-Fiction', '🚀'], ['Fantasy', '🐉'],
+  ['Horror', '👻'], ['Action', '💥'], ['Romance', '💘'], ['Mystery', '🔍'], ['History', '🏰'], ['Anime', '🍥'],
+  ['Family', '👨‍👩‍👧'], ['Supernatural', '🔮'], ['Medical', '🏥'], ['Legal', '⚖️'], ['Espionage', '🕶️'], ['War', '🎖️'],
+];
+const MOODS = [
+  ['light', '😌', 'Léger et feel-good', 'Pour décompresser après la journée', ['Comedy', 'Family', 'Romance', 'Music']],
+  ['intense', '🔥', 'Intense et haletant', 'Impossible de s\'arrêter', ['Thriller', 'Crime', 'Horror', 'Action', 'Espionage', 'War']],
+  ['think', '🤯', 'Qui fait réfléchir', 'Des histoires qui restent en tête', ['Drama', 'Science-Fiction', 'Mystery', 'History', 'Legal']],
+  ['mix', '🎲', 'Un peu de tout', 'Selon l\'humeur du moment', []],
+];
+const LANGS = [
+  ['English', '🇺🇸', 'Anglais'], ['French', '🇫🇷', 'Français'], ['Korean', '🇰🇷', 'Coréen'],
+  ['Japanese', '🇯🇵', 'Japonais'], ['Spanish', '🇪🇸', 'Espagnol'], ['German', '🇩🇪', 'Allemand'],
+];
+const PERSONAS = {
+  Drama: 'Team émotions', Comedy: 'Team fous rires', Thriller: 'Team suspense', Crime: 'Team enquêtes', 'Science-Fiction': 'Team futur',
+  Fantasy: 'Team évasion', Horror: 'Team frissons', Action: 'Team adrénaline', Romance: 'Team cœur d\'artichaut', Mystery: 'Team mystères',
+  History: 'Team voyage dans le temps', Anime: 'Team animé', Family: 'Team cocooning', Supernatural: 'Team surnaturel', Medical: 'Team blouses blanches',
+  Legal: 'Team plaidoiries', Espionage: 'Team agents secrets', War: 'Team stratèges',
+};
+function personaOf(p) {
+  const g = (p?.genres || [])[0];
+  if (!g) return 'Team curiosité';
+  return PERSONAS[g] || 'Team curiosité';
+}
+
+/* Score de chaque série du catalogue selon le profil et la bibliothèque. */
+function recommend(limit = 24) {
+  const cat = catalogCache || [];
+  if (!cat.length) return [];
+  const p = state.profile || {};
+  const prefs = new Set(p.genres || []);
+  const mood = MOODS.find(m => m[0] === p.mood);
+  const moodGenres = new Set(mood ? mood[4] : []);
+  const langs = new Set(p.langs || []);
+  const myPlatforms = state.platforms.filter(pl => (p.platforms || []).includes(pl.id));
+  const owned = new Set(state.shows.map(s => s.tvmazeId).filter(Boolean));
+  const dismissed = new Set(state.dismissed || []);
+  const favs = p.favs || [];
+  favs.forEach(f => owned.add(f.id));
+
+  // Goûts appris de la bibliothèque : genres des séries suivies, pondérés
+  const libTaste = new Map();
+  const libRefs = [];
+  for (const s of state.shows) {
+    const w = s.status === 'dropped' ? -1.5 : s.status === 'completed' ? 2 : s.status === 'watching' ? 1.5 : 0.6;
+    const bonus = (s.rating || 0) >= 4 ? 1 : 0;
+    const gs = s.genres.map(g => GENRE_EN[norm(g)] || g);
+    for (const g of gs) libTaste.set(g, (libTaste.get(g) || 0) + w + bonus);
+    if (w > 0) libRefs.push({ title: s.title, g: new Set(gs), w: w + bonus });
+  }
+  for (const f of favs) libRefs.push({ title: f.n, g: new Set(f.g || []), w: 3 });
+
+  const out = [];
+  for (const c of cat) {
+    if (owned.has(c.id) || dismissed.has(c.id)) continue;
+    const gs = c.an && !c.g.includes('Anime') ? [...c.g, 'Anime'] : c.g;
+    let score = 0;
+    const reasons = [];
+    let gPref = 0;
+    for (const g of gs) {
+      if (prefs.has(g)) { score += 3; gPref++; if (!reasons.some(r => r.k === 'g')) reasons.push({ k: 'g', w: 3, t: `Vous aimez le genre ${genreFr(g).toLowerCase()}` }); }
+      if (moodGenres.has(g)) score += 1.2;
+      score += Math.max(-3, Math.min(4, (libTaste.get(g) || 0) * 0.5));
+    }
+    let best = null;
+    for (const ref of libRefs) {
+      let common = 0;
+      for (const g of gs) if (ref.g.has(g)) common++;
+      if (common >= 2 && (!best || common * ref.w > best.v)) best = { v: common * ref.w, t: ref.title };
+    }
+    if (best) { score += 2 + Math.min(best.v, 8) * 0.25; reasons.push({ k: 'like', w: 4 + best.v, t: `Comme ${best.t}` }); }
+    if (langs.size && !langs.has('any')) { if (langs.has(c.l)) score += 2.5; else score -= 5; }
+    const pf = myPlatforms.find(pl => (c.d && pl.domain && c.d.endsWith(pl.domain.replace(/^tv\./, ''))) || norm(pl.name) === norm(c.p) || (PLATFORM_ALIASES[pl.id] || []).includes(norm(c.p)));
+    if (pf) { score += 2.5; reasons.push({ k: 'pf', w: 2.5, t: `Sur ${pf.name}` }); }
+    if (p.length === 'short' && c.rt && c.rt <= 35) score += 1.5;
+    if (p.length === 'long' && c.rt >= 40) score += 1;
+    if (p.format === 'mini' && !c.st) score += 0.8;
+    if (p.format === 'long' && c.st) score += 0.8;
+    score += (c.r || 6.5) * 0.7 + Math.log10(c.w) * 1.5;
+    if (c.y >= new Date().getFullYear() - 3) score += 0.8;
+    if (prefs.size && !gPref && !best) score -= 3;
+    if (!reasons.length) reasons.push({ k: 'pop', w: 0, t: c.r >= 8 ? 'Très bien notée' : 'Très populaire' });
+    reasons.sort((a, b) => b.w - a.w);
+    out.push({ c, score, reasons, reason: reasons[0].t });
+  }
+  out.sort((a, b) => b.score - a.score);
+  // Un peu de variété : pas plus de 3 séries d'affilée avec le même genre principal
+  const res = [], streak = { g: '', n: 0 }, held = [];
+  for (const r of out) {
+    const g = r.c.g[0];
+    if (g === streak.g && streak.n >= 3) { held.push(r); continue; }
+    streak.n = g === streak.g ? streak.n + 1 : 1; streak.g = g;
+    res.push(r);
+    if (res.length >= limit) break;
+  }
+  // Raisons variées : une même raison au plus deux fois d'affilée dans la liste
+  const final = res.concat(held).slice(0, limit);
+  const used = new Map();
+  for (const r of final) {
+    const pick = r.reasons.find(x => (used.get(x.t) || 0) < 2) || r.reasons[0];
+    r.reason = pick.t;
+    used.set(pick.t, (used.get(pick.t) || 0) + 1);
+  }
+  return final;
+}
+
+function recCard(r) {
+  const c = r.c;
+  return `<article class="rcard" data-rec="${c.id}">
+    <button class="rcard-open" data-act="rec-open" data-id="${c.id}" aria-label="Voir ${esc(c.n)}">
+      ${posterHTML({ title: c.n, poster: CATALOG_IMG + c.i })}<span class="pcard-shade"></span>
+      <span class="rcard-info"><b>${esc(c.n)}</b><span>${[c.y || '', c.r ? `★ ${c.r.toFixed(1)}` : ''].filter(Boolean).join('  ')}</span></span>
+    </button>
+    <span class="rcard-reason">${esc(r.reason)}</span>
+    <div class="rcard-actions">
+      <button class="rc-btn no" data-act="rec-dismiss" data-id="${c.id}" aria-label="Pas pour moi : ${esc(c.n)}" title="Pas pour moi">${icon('x')}</button>
+      <button class="rc-btn yes" data-act="rec-add" data-id="${c.id}" aria-label="Ajouter ${esc(c.n)} à ma liste" title="Ajouter à « À regarder »">${icon('plus')}</button>
+    </div>
+  </article>`;
+}
+function recsSectionHTML(limit = 12) {
+  if (!catalogCache) { loadCatalog().then(() => safeRender()); return ''; }
+  const recs = recommend(limit);
+  if (!recs.length) return '';
+  return `<section class="section"><div class="section-head"><h2 class="section-title">Pour vous</h2><a class="section-link" href="#/discover">Tout voir ${icon('chevron', 'sm')}</a></div>
+    <div class="rrail">${recs.map(recCard).join('')}</div></section>`;
+}
+function viewDiscover() {
+  if (!catalogCache) { loadCatalog().then(() => safeRender()); return `<div class="loading-block"><div class="spinner"></div>Préparation de vos recommandations…</div>`; }
+  const p = state.profile || {};
+  const recs = recommend(48);
+  return `<header class="page-head"><div><h1 class="page-title">Découvrir</h1><p class="page-sub">${p.done && !p.skipped ? `${esc(personaOf(p))} · choisies selon vos goûts et votre bibliothèque.` : 'Des séries populaires. Répondez au questionnaire pour des suggestions sur mesure.'}</p></div></header>
+    ${!p.done || p.skipped ? `<div class="notice" style="margin:12px 0 18px">${icon('sparkle')}<div><p>Dites-nous ce que vous aimez en 1 minute pour des recommandations personnalisées.</p><div class="actions"><button class="btn sm primary" data-act="ob-start">Répondre au questionnaire</button></div></div></div>` : ''}
+    ${recs.length ? `<div class="rgrid">${recs.map(recCard).join('')}</div>` : emptyHTML({ ic: 'sparkle', title: 'Vous avez tout vu !', text: 'Plus aucune suggestion pour le moment. Revenez après avoir ajouté quelques séries.' })}
+    <p class="help" style="margin-top:20px">Touchez une affiche pour voir le résumé. ✕ pour l'écarter, + pour l'ajouter à « À regarder ».</p>`;
+}
+
+/* Ajout rapide depuis une recommandation ou un coup de cœur */
+async function quickAdd(id, status = 'planned', frTitle = '') {
+  if (state.shows.some(s => s.tvmazeId === id)) return null;
+  const data = await fetchFullShow(id);
+  const dr = draftFromCatalog(data, frTitle);
+  const show = normShow({
+    id: uid(), tvmazeId: dr.tvmazeId, title: dr.title, originalTitle: dr.originalTitle, poster: dr.poster, backdrop: dr.backdrop,
+    overview: dr.overview, genres: dr.genres, year: dr.year, airStatus: dr.airStatus, status, platforms: dr.platforms,
+    providers: dr.providers, rating: 0, notes: '', airTime: '', runtime: dr.runtime, seasons: dr.seasons,
+    addedAt: Date.now(), updatedAt: Date.now(), lastSync: Date.now(),
+  });
+  if (status === 'completed') {
+    const states = computeStates(show);
+    for (const e of allEps(show)) if (states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); }
+  }
+  state.shows.unshift(show);
+  save();
+  return show;
+}
+
+/* ---------- Questionnaire de la première ouverture ---------- */
+const OB_STEPS = ['hello', 'genres', 'mood', 'format', 'langs', 'platforms', 'favs', 'done'];
+function startOnboarding() {
+  const p = state.profile || {};
+  ui.ob = {
+    step: 0, q: '', results: [], searching: false,
+    d: {
+      name: p.name || account?.name?.split(' ')[0] || '',
+      genres: new Set(p.genres || []), mood: p.mood || '', format: p.format || 'any', length: p.length || 'any',
+      langs: new Set(p.langs || []), platforms: new Set(p.platforms || state.shows.flatMap(s => s.platforms.map(x => x.pid))),
+      favs: [...(p.favs || [])], addFavs: false,
+    },
+  };
+  loadCatalog();
+  location.hash = '#/welcome';
+  render();
+}
+function viewOnboarding() {
+  if (!ui.ob) startOnboarding();
+  const o = ui.ob, d = o.d, step = OB_STEPS[o.step];
+  const total = OB_STEPS.length - 1;
+  const tile = (act, val, on, emoji, label, sub = '') => `<button class="ob-tile ${on ? 'on' : ''}" data-act="${act}" data-v="${esc(val)}" aria-pressed="${on}"><span class="ob-emoji" aria-hidden="true">${emoji}</span><b>${esc(label)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`;
+  let body = '', canNext = true;
+  if (step === 'hello') {
+    body = `<div class="ob-hero">${tvIllustration()}</div>
+      <h1 class="ob-title">Bienvenue${d.name ? ' ' + esc(d.name) : ''} !</h1>
+      <p class="ob-sub">Quelques questions rapides pour vous proposer des séries qui vous ressemblent. Ça prend une minute.</p>
+      <div class="field ob-field"><label for="obName">Votre prénom</label><input id="obName" class="input" value="${esc(d.name)}" data-input="ob-name" autocomplete="given-name" placeholder="Camille"></div>`;
+  } else if (step === 'genres') {
+    body = `<h1 class="ob-title">Vous aimez quels genres ?</h1><p class="ob-sub">Choisissez-en autant que vous voulez.</p>
+      <div class="ob-grid">${TASTE_GENRES.map(([g, e]) => tile('ob-genre', g, d.genres.has(g), e, genreFr(g))).join('')}</div>`;
+    canNext = d.genres.size > 0;
+  } else if (step === 'mood') {
+    body = `<h1 class="ob-title">Le soir, vous avez plutôt envie de…</h1>
+      <div class="ob-list">${MOODS.map(([v, e, l, s]) => tile('ob-mood', v, d.mood === v, e, l, s)).join('')}</div>`;
+    canNext = !!d.mood;
+  } else if (step === 'format') {
+    body = `<h1 class="ob-title">Plutôt quel format ?</h1>
+      <p class="ob-q">La durée de la série</p>
+      <div class="ob-row">${[['mini', '⚡', 'Courtes', 'Une ou deux saisons'], ['long', '📺', 'Longues', 'À suivre sur des années'], ['any', '🤷', 'Peu importe', '']].map(([v, e, l, s]) => tile('ob-format', v, d.format === v, e, l, s)).join('')}</div>
+      <p class="ob-q">La durée d'un épisode</p>
+      <div class="ob-row">${[['short', '☕', 'Courts', '≈ 25 min'], ['long', '🍿', 'Longs', '≈ 50 min'], ['any', '🤷', 'Peu importe', '']].map(([v, e, l, s]) => tile('ob-length', v, d.length === v, e, l, s)).join('')}</div>`;
+  } else if (step === 'langs') {
+    body = `<h1 class="ob-title">Vous regardez des séries en quelle langue ?</h1><p class="ob-sub">En version originale, avec ou sans sous-titres.</p>
+      <div class="ob-grid">${LANGS.map(([v, e, l]) => tile('ob-lang', v, d.langs.has(v), e, l)).join('')}${tile('ob-lang', 'any', d.langs.has('any'), '🌍', 'Toutes')}</div>`;
+    canNext = d.langs.size > 0;
+  } else if (step === 'platforms') {
+    const all = [...state.platforms, ...SUGGESTED_PLATFORMS.filter(([n, dm]) => !state.platforms.some(p => p.domain === dm)).map(([n, dm, c]) => ({ id: 'sugg:' + dm, name: n, domain: dm, color: c, mark: n.slice(0, 2) }))];
+    body = `<h1 class="ob-title">Vous avez quelles plateformes ?</h1><p class="ob-sub">Pour vous proposer d'abord ce que vous pouvez regarder.</p>
+      <div class="ob-grid pf-grid">${all.map(p => `<button class="ob-tile pf-tile ${d.platforms.has(p.id) ? 'on' : ''}" data-act="ob-pf" data-v="${esc(p.id)}" aria-pressed="${d.platforms.has(p.id)}">${pfBadge(p, 'xl')}<b>${esc(p.name)}</b></button>`).join('')}</div>`;
+  } else if (step === 'favs') {
+    const picks = (catalogCache || []).filter(c => !d.favs.some(f => f.id === c.id) && (!d.genres.size || c.g.some(g => d.genres.has(g)))).slice(0, 18);
+    body = `<h1 class="ob-title">Vos coups de cœur ?</h1><p class="ob-sub">Touchez les séries que vous avez adorées (jusqu'à 8). Elles guideront nos suggestions.</p>
+      ${d.favs.length ? `<div class="ob-favs">${d.favs.map(f => `<button class="ob-fav" data-act="ob-unfav" data-v="${f.id}" aria-label="Retirer ${esc(f.n)}">${posterHTML({ title: f.n, poster: f.img })}<span class="ob-fav-x">${icon('x', 'sm')}</span></button>`).join('')}</div>` : ''}
+      <div class="search-box ob-search">${icon('search')}<label class="visually-hidden" for="obSearch">Rechercher une série</label><input id="obSearch" class="input" type="search" placeholder="Rechercher une série…" value="${esc(o.q)}" data-input="ob-q" autocomplete="off"></div>
+      <div id="obResults" class="ob-picks">${obPicksHTML(o.q.trim().length >= 2 ? o.results : picks.map(c => ({ id: c.id, n: c.n, img: CATALOG_IMG + c.i, g: c.g })))}</div>
+      ${d.favs.length ? `<label class="ob-check"><input type="checkbox" data-change="ob-addfavs" ${d.addFavs ? 'checked' : ''}> Les ajouter à ma bibliothèque comme « Terminées »</label>` : ''}`;
+  } else {
+    const prof = obProfile();
+    const saved = state.profile; state.profile = prof;
+    const recs = recommend(6);
+    state.profile = saved;
+    body = `<div class="ob-result"><span class="ob-badge">${esc(personaOf(prof))}</span>
+      <h1 class="ob-title">C'est noté${d.name ? ', ' + esc(d.name) : ''} !</h1>
+      <div class="ob-summary">${[...d.genres].map(g => `<span class="chip">${(TASTE_GENRES.find(t => t[0] === g) || [, ''])[1]} ${esc(genreFr(g))}</span>`).join('')}${d.mood ? `<span class="chip accent">${MOODS.find(m => m[0] === d.mood)[1]} ${esc(MOODS.find(m => m[0] === d.mood)[2])}</span>` : ''}</div>
+      <p class="ob-sub">Voici de quoi commencer :</p>
+      <div class="ob-recs">${recs.map(r => `<div class="ob-rec">${posterHTML({ title: r.c.n, poster: CATALOG_IMG + r.c.i })}<b>${esc(r.c.n)}</b><small>${esc(r.reason)}</small></div>`).join('')}</div></div>`;
+  }
+  const last = o.step === total;
+  return `<section class="ob">
+    <div class="ob-top">
+      ${o.step > 0 ? `<button class="icon-btn" data-act="ob-back" aria-label="Question précédente">${icon('back')}</button>` : '<span></span>'}
+      <div class="ob-progress" role="progressbar" aria-valuenow="${o.step}" aria-valuemax="${total}"><span style="width:${(o.step / total) * 100}%"></span></div>
+      ${last ? '<span></span>' : `<button class="link-btn" data-act="ob-skip">Passer</button>`}
+    </div>
+    <div class="ob-body">${body}</div>
+    <div class="ob-foot">
+      <button class="btn primary lg ob-next" data-act="${last ? 'ob-finish' : 'ob-next'}" ${canNext ? '' : 'disabled'}>${last ? 'Découvrir mes séries' : o.step === 0 ? 'Commencer' : 'Continuer'}${icon('chevron')}</button>
+      ${!canNext ? '<p class="help ob-hint">Choisissez au moins une réponse pour continuer.</p>' : ''}
+    </div>
+  </section>`;
+}
+function obPicksHTML(list) {
+  const d = ui.ob.d;
+  if (ui.ob.searching) return '<div class="loading-block" style="padding:24px"><div class="spinner"></div></div>';
+  if (!list.length) return `<p class="help" style="grid-column:1/-1">${ui.ob.q.trim().length >= 2 ? 'Aucune série trouvée.' : ''}</p>`;
+  return list.map(c => `<button class="ob-pick ${d.favs.some(f => f.id === c.id) ? 'on' : ''}" data-act="ob-fav" data-v="${c.id}" aria-pressed="${d.favs.some(f => f.id === c.id)}">${posterHTML({ title: c.n, poster: c.img })}<span class="ob-pick-check">${icon('check', 'sm')}</span><b>${esc(c.n)}</b></button>`).join('');
+}
+function obProfile() {
+  const d = ui.ob.d;
+  return {
+    name: d.name.trim(), genres: [...d.genres], mood: d.mood, format: d.format, length: d.length,
+    langs: [...d.langs], platforms: [...d.platforms].filter(id => !id.startsWith('sugg:')), favs: d.favs, done: true, at: Date.now(),
+  };
+}
+let obSearchTimer = 0;
+function obSearch(q) {
+  ui.ob.q = q;
+  clearTimeout(obSearchTimer);
+  const el = $('#obResults');
+  if (q.trim().length < 2) { ui.ob.results = []; ui.ob.searching = false; render(); const i = $('#obSearch'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } return; }
+  ui.ob.searching = true; if (el) el.innerHTML = obPicksHTML([]);
+  obSearchTimer = setTimeout(async () => {
+    try {
+      const r = await api('/search/shows?q=' + encodeURIComponent(q.trim()));
+      ui.ob.results = (r || []).map(x => x.show).filter(s => s?.image).slice(0, 12).map(s => ({ id: s.id, n: s.name, img: s.image.medium, g: s.genres }));
+    } catch { ui.ob.results = []; }
+    ui.ob.searching = false;
+    const box = $('#obResults'); if (box) box.innerHTML = obPicksHTML(ui.ob.results);
+  }, 350);
+}
+async function finishOnboarding(skipped = false) {
+  const o = ui.ob;
+  if (skipped) state.profile = { ...(state.profile || {}), done: true, skipped: true, at: Date.now() };
+  else {
+    state.profile = obProfile();
+    // Les plateformes suggérées choisies rejoignent la liste
+    for (const id of o.d.platforms) {
+      if (!id.startsWith('sugg:')) continue;
+      const s = SUGGESTED_PLATFORMS.find(x => x[1] === id.slice(5));
+      if (s && !state.platforms.some(p => p.domain === s[1])) {
+        const p = { id: 'c-' + uid(), name: s[0], domain: s[1], color: s[2], fg: '#fff', mark: s[0].slice(0, 2), custom: true };
+        state.platforms.push(p); state.profile.platforms.push(p.id);
+      }
+    }
+  }
+  save();
+  const favs = !skipped && o.d.addFavs ? [...o.d.favs] : [];
+  ui.ob = null;
+  location.hash = '#/home';
+  render();
+  if (favs.length) {
+    toast(`Ajout de vos ${favs.length} coups de cœur…`, { type: 'info' });
+    let n = 0;
+    for (const f of favs) { try { if (await quickAdd(f.id, 'completed')) n++; } catch { /* on passe */ } }
+    render();
+    toast(`${plural(n, 'série ajoutée', 'séries ajoutées')} à « Terminées ».`);
+  }
+}
+
+/* ---------- Actions ---------- */
+Object.assign(ACTIONS, {
+  'auth-google': async () => { ui.authError = ''; try { await window.cloud.signInGoogle(); } catch (err) { ui.authError = window.cloud.errorText(err); render(); } },
+  'auth-mode': () => { ui.authMode = ui.authMode === 'signin' ? 'signup' : 'signin'; ui.authError = ''; render(); },
+  'auth-reset': async () => {
+    const email = $('#aEmail')?.value.trim();
+    if (!email) { ui.authError = 'Indiquez votre e-mail ci-dessus, puis touchez « Mot de passe oublié ? ».'; render(); return; }
+    try { await window.cloud.reset(email); toast('E-mail de réinitialisation envoyé. Vérifiez votre boîte de réception.'); }
+    catch (err) { ui.authError = window.cloud.errorText(err); render(); }
+  },
+  'auth-guest': () => { ui.guest = true; try { localStorage.setItem(GUEST_KEY, '1'); } catch { /* */ } location.hash = '#/home'; render(); },
+  'auth-open': () => { ui.guest = false; ui.authMode = 'signup'; try { localStorage.removeItem(GUEST_KEY); } catch { /* */ } location.hash = '#/auth'; render(); },
+  'sign-out': async () => {
+    if (!await confirmDialog({ title: 'Se déconnecter ?', body: 'Vos séries restent enregistrées dans votre compte. Vous les retrouverez en vous reconnectant.', confirm: 'Me déconnecter' })) return;
+    await window.cloud.signOut();
+    state = defaultState(); ui.guest = false;
+    try { localStorage.removeItem(LAST_USER_KEY); } catch { /* */ }
+    location.hash = '#/auth'; render();
+  },
+  'ob-start': () => startOnboarding(),
+  'ob-next': () => { ui.ob.step = Math.min(OB_STEPS.length - 1, ui.ob.step + 1); render(); },
+  'ob-back': () => { ui.ob.step = Math.max(0, ui.ob.step - 1); render(); },
+  'ob-skip': () => { if (state.profile?.done) { ui.ob = null; location.hash = '#/settings'; render(); } else finishOnboarding(true); },
+  'ob-finish': () => finishOnboarding(false),
+  'ob-genre': el => { const s = ui.ob.d.genres, v = el.dataset.v; s.has(v) ? s.delete(v) : s.add(v); render(); },
+  'ob-mood': el => { ui.ob.d.mood = el.dataset.v; render(); },
+  'ob-format': el => { ui.ob.d.format = el.dataset.v; render(); },
+  'ob-length': el => { ui.ob.d.length = el.dataset.v; render(); },
+  'ob-lang': el => {
+    const s = ui.ob.d.langs, v = el.dataset.v;
+    if (v === 'any') { s.clear(); s.add('any'); } else { s.delete('any'); s.has(v) ? s.delete(v) : s.add(v); }
+    render();
+  },
+  'ob-pf': el => { const s = ui.ob.d.platforms, v = el.dataset.v; s.has(v) ? s.delete(v) : s.add(v); render(); },
+  'ob-fav': el => {
+    const id = +el.dataset.v, d = ui.ob.d;
+    const i = d.favs.findIndex(f => f.id === id);
+    if (i >= 0) d.favs.splice(i, 1);
+    else if (d.favs.length < 8) {
+      const c = (catalogCache || []).find(x => x.id === id) || null;
+      const r = ui.ob.results.find(x => x.id === id);
+      d.favs.push(c ? { id, n: c.n, img: CATALOG_IMG + c.i, g: c.g } : { id, n: r?.n || '', img: r?.img || '', g: r?.g || [] });
+    } else { toast('8 coups de cœur maximum.', { type: 'info' }); return; }
+    buzz(); render();
+  },
+  'ob-unfav': el => { ui.ob.d.favs = ui.ob.d.favs.filter(f => f.id !== +el.dataset.v); render(); },
+  'rec-open': el => { openAdd(); pickFromCatalog(+el.dataset.id); },
+  'rec-add': async el => {
+    const id = +el.dataset.id;
+    const card = el.closest('.rcard'); card?.classList.add('busy');
+    try {
+      const s = await quickAdd(id, 'planned');
+      if (s) { buzz(); toast(`« ${s.title} » ajoutée à « À regarder ».`, { action: { label: 'Voir', fn: () => { location.hash = '#/show/' + s.id; } } }); }
+    } catch (err) { toast(apiErrorText(err), { type: 'error' }); }
+    render();
+  },
+  'rec-dismiss': el => {
+    const id = +el.dataset.id;
+    state.dismissed = [...new Set([...(state.dismissed || []), id])].slice(-500);
+    save();
+    const card = el.closest('.rcard');
+    if (card) { card.classList.add('gone'); setTimeout(render, 220); } else render();
+    toast('Suggestion écartée.', { action: { label: 'Annuler', fn: () => { state.dismissed = state.dismissed.filter(x => x !== id); save(); render(); } } });
+  },
+});
+Object.assign(INPUTS, {
+  'ob-name': el => { ui.ob.d.name = el.value; },
+  'ob-q': el => obSearch(el.value),
+});
+Object.assign(CHANGES, {
+  'ob-addfavs': el => { ui.ob.d.addFavs = el.checked; },
+});
+document.addEventListener('submit', async ev => {
+  if (ev.target.id !== 'authForm') return;
+  ev.preventDefault();
+  const f = ev.target;
+  const email = f.email.value.trim(), password = f.password.value, name = f.name?.value.trim() || '';
+  if (!email || !password) { ui.authError = 'Indiquez votre e-mail et votre mot de passe.'; render(); return; }
+  const btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-top-color:currentColor"></span>';
+  ui.authError = '';
+  try {
+    if (ui.authMode === 'signin') await window.cloud.signIn(email, password);
+    else { await window.cloud.signUp(email, password, name); if (name) state.profile = { ...(state.profile || {}), name }; }
+  } catch (err) { ui.authError = window.cloud.errorText(err); render(); }
+});
+
 /* ---------- Démarrage ---------- */
 window.addEventListener('hashchange', render);
 window.addEventListener('storage', e => { if (e.key === STORE_KEY) { state = load(); render(); } });
+if (CLOUD_ON) {
+  // Hors connexion au démarrage : on rouvre le dernier compte avec ses données locales
+  authTimer = setTimeout(() => {
+    if (authState !== 'pending') return;
+    let last = null;
+    try { last = JSON.parse(localStorage.getItem(LAST_USER_KEY) || 'null'); } catch { /* */ }
+    if (last) { account = last; authState = 'in'; state = readStore(storeKey()) || state; }
+    else authState = 'out';
+    render();
+  }, 6000);
+}
 applyTheme();
 if (!location.hash) history.replaceState(null, '', '#/home');
 render();
