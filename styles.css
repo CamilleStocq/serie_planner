@@ -878,3 +878,19 @@ a, button, label, select, input { touch-action: manipulation; }
   /* Barre du bas */
   .bottomnav { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
 }
+
+/* =========================================================
+   Logos officiels des plateformes
+   ========================================================= */
+.pf { position: relative; }
+.pf > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pf { width: 26px; height: 26px; border-radius: 8px; }
+.pf.lg { width: 40px; height: 40px; border-radius: 11px; }
+.rel-meta .pf { width: 22px; height: 22px; border-radius: 6px; }
+.pf-chip .pf { width: 26px; height: 26px; border-radius: 8px; }
+.pf-tag .pf { width: 26px; height: 26px; }
+.card-pfs .pf, .pcard-pf .pf { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
+.feature-kicker .pf { width: 28px; height: 28px; }
+.pf-suggest { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+@media (max-width: 560px) { .pf-add { grid-template-columns: 1fr; } }

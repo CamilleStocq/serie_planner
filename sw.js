@@ -1,7 +1,7 @@
 // Service worker : l'app s'ouvre même hors connexion.
 // Fichiers de l'app : réseau d'abord (toujours la dernière version), cache en secours.
 // Affiches : cache d'abord (elles ne changent pas).
-const APP_CACHE = 'saison-app-v6';
+const APP_CACHE = 'saison-app-v7';
 const IMG_CACHE = 'saison-images-v1';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icons/icon-192.png'];
 
@@ -34,7 +34,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (url.hostname === 'static.tvmaze.com') {
+  if (url.hostname === 'static.tvmaze.com' || (url.hostname === 'www.google.com' && url.pathname === '/s2/favicons')) {
     event.respondWith(
       caches.open(IMG_CACHE).then(cache => cache.match(req).then(hit => hit || fetch(req).then(res => {
         if (res.ok || res.type === 'opaque') {

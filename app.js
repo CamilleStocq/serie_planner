@@ -27,13 +27,21 @@ const AIR_STATUS = {
 };
 
 const DEFAULT_PLATFORMS = [
-  { id: 'netflix', name: 'Netflix', color: '#E50914', fg: '#ffffff', mark: 'N' },
-  { id: 'prime', name: 'Prime Video', color: '#00A8E1', fg: '#ffffff', mark: 'prime' },
-  { id: 'disney', name: 'Disney+', color: '#0E2A8C', fg: '#ffffff', mark: 'D+' },
-  { id: 'appletv', name: 'Apple TV+', color: '#1d1d1f', fg: '#ffffff', mark: 'tv+' },
-  { id: 'max', name: 'HBO Max', color: '#5B2BD0', fg: '#ffffff', mark: 'max' },
-  { id: 'paramount', name: 'Paramount+', color: '#0064FF', fg: '#ffffff', mark: 'P+' },
-  { id: 'crunchyroll', name: 'Crunchyroll', color: '#F47521', fg: '#ffffff', mark: 'CR' },
+  { id: 'netflix', name: 'Netflix', color: '#E50914', fg: '#ffffff', mark: 'N', domain: 'netflix.com' },
+  { id: 'prime', name: 'Prime Video', color: '#00A8E1', fg: '#ffffff', mark: 'prime', domain: 'primevideo.com' },
+  { id: 'disney', name: 'Disney+', color: '#0E2A8C', fg: '#ffffff', mark: 'D+', domain: 'disneyplus.com' },
+  { id: 'appletv', name: 'Apple TV+', color: '#1d1d1f', fg: '#ffffff', mark: 'tv+', domain: 'tv.apple.com' },
+  { id: 'max', name: 'HBO Max', color: '#5B2BD0', fg: '#ffffff', mark: 'max', domain: 'max.com' },
+  { id: 'paramount', name: 'Paramount+', color: '#0064FF', fg: '#ffffff', mark: 'P+', domain: 'paramountplus.com' },
+  { id: 'crunchyroll', name: 'Crunchyroll', color: '#F47521', fg: '#ffffff', mark: 'CR', domain: 'crunchyroll.com' },
+];
+// Plateformes courantes proposées en un clic (logo récupéré depuis leur site officiel)
+const SUGGESTED_PLATFORMS = [
+  ['Canal+', 'canalplus.com', '#000000'], ['Auvio', 'auvio.rtbf.be', '#1d1d1b'], ['Streamz', 'streamz.be', '#e6007e'],
+  ['VRT MAX', 'vrt.be', '#5dfc71'], ['RTL Play', 'rtlplay.be', '#e2001a'], ['france.tv', 'france.tv', '#2a2bd6'],
+  ['Arte', 'arte.tv', '#fa481c'], ['TF1+', 'tf1.fr', '#0a3cc7'], ['M6+', 'm6.fr', '#8b2fc9'],
+  ['SkyShowtime', 'skyshowtime.com', '#7a2fd0'], ['Hulu', 'hulu.com', '#1ce783'], ['Peacock', 'peacocktv.com', '#000000'],
+  ['Pluto TV', 'pluto.tv', '#2e1a47'], ['ADN', 'animationdigitalnetwork.com', '#0096ff'], ['YouTube', 'youtube.com', '#ff0000'],
 ];
 
 const REGIONS = [
@@ -176,6 +184,7 @@ function normalize(d) {
   out.platforms = Array.isArray(d.platforms) ? d.platforms : base.platforms;
   const ids = new Set(out.platforms.map(p => p.id));
   for (const p of base.platforms) if (!ids.has(p.id)) out.platforms.push(p);
+  for (const p of out.platforms) { const def = base.platforms.find(b => b.id === p.id); if (def && !p.domain) p.domain = def.domain; }
   if ((d.settings || {}).themeV !== 2) { out.settings.theme = 'light'; out.settings.themeV = 2; }
   out.shows = (d.shows || []).map(normShow);
   return out;
@@ -312,10 +321,22 @@ function posterHTML(show, size = 'w342') {
   const src = imgUrl(show.poster, size);
   return `<div class="poster">${fb}${src ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>`;
 }
+// Icône officielle publiée par le site de la plateforme (via le service d'icônes de Google)
+function logoUrl(p) {
+  if (p.logo) return imgUrl(p.logo, 'w92');
+  if (p.domain) return 'https://www.google.com/s2/favicons?sz=128&domain=' + encodeURIComponent(p.domain);
+  return '';
+}
+function domainOf(input) {
+  const v = String(input || '').trim();
+  if (!v) return '';
+  try { return new URL(/^https?:\/\//i.test(v) ? v : 'https://' + v).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
 function pfBadge(p, cls = '') {
   if (!p) return '';
-  const inner = p.logo ? `<img src="${esc(imgUrl(p.logo, 'w92'))}" alt="" loading="lazy" onerror="this.remove()">` : '';
-  return `<span class="pf ${cls}" style="--pc:${esc(p.color || '#333')};--pf:${esc(p.fg || '#fff')}" title="${esc(p.name)}" aria-label="${esc(p.name)}">${inner || esc(p.mark || p.name.slice(0, 2))}</span>`;
+  const src = logoUrl(p);
+  const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  return `<span class="pf ${src ? 'has-logo' : ''} ${cls}" style="--pc:${esc(p.color || '#333')};--pf:${esc(p.fg || '#fff')}" title="${esc(p.name)}" aria-label="${esc(p.name)}"><span class="pf-mark">${esc(p.mark || p.name.slice(0, 2))}</span>${img}</span>`;
 }
 function showPlatforms(show) { return show.platforms.map(x => ({ ...x, p: getPlatform(x.pid) })).filter(x => x.p); }
 function catChip(id) { const c = CAT[id]; return `<span class="chip" style="color:${c.color};background:color-mix(in srgb, ${c.color} 16%, transparent)"><span class="dot"></span>${c.label}</span>`; }
@@ -964,7 +985,7 @@ function platformForName(name) {
 function originsOf(d) {
   const out = [];
   for (const [o, kind] of [[d.webChannel, 'web'], [d.network, 'tv']]) {
-    if (o && o.name) out.push({ name: o.name, country: o.country?.code || '', kind });
+    if (o && o.name) out.push({ name: o.name, country: o.country?.code || '', kind, domain: domainOf(o.officialSite) });
   }
   return out;
 }
@@ -1503,12 +1524,16 @@ function viewSettings() {
     <section class="panel"><div class="panel-title">Plateformes</div>
       <div class="pf-manage">${state.platforms.map(p => `<div class="pf-manage-row">${pfBadge(p, 'lg')}<span class="name">${esc(p.name)} <small>· ${plural(used(p.id), 'série', 'séries')}</small></span>
         ${p.custom || !DEFAULT_PLATFORMS.some(d => d.id === p.id) ? `<button class="icon-btn sm" data-act="pf-delete" data-pid="${p.id}" aria-label="Supprimer ${esc(p.name)}" title="Supprimer">${icon('trash')}</button>` : ''}</div>`).join('')}</div>
-      <form id="pfForm" class="pf-add" style="margin-top:16px">
-        <div class="field"><label for="pfName">Nouvelle plateforme</label><input id="pfName" name="name" class="input" placeholder="ex. Canal+, Auvio, Streamz" required maxlength="40"></div>
-        <div class="field"><label for="pfMark">Sigle</label><input id="pfMark" name="mark" class="input" maxlength="4" placeholder="C+"></div>
-        <div class="field"><label for="pfColor">Couleur</label><input id="pfColor" name="color" type="color" value="#2a6df4"></div>
+      ${(() => {
+        const sugg = SUGGESTED_PLATFORMS.filter(([n, d]) => !state.platforms.some(p => norm(p.name) === norm(n) || p.domain === d));
+        return sugg.length ? `<p class="label" style="margin:18px 0 8px">Ajouter en un clic</p><div class="pf-suggest">${sugg.map(([n, d, c], i) => `<button class="pf-chip" data-act="pf-suggest" data-i="${SUGGESTED_PLATFORMS.findIndex(x => x[0] === n)}">${pfBadge({ name: n, domain: d, color: c, mark: n.slice(0, 2) })}${esc(n)}</button>`).join('')}</div>` : '';
+      })()}
+      <form id="pfForm" class="pf-add" style="margin-top:18px">
+        <div class="field"><label for="pfName">Autre plateforme</label><input id="pfName" name="name" class="input" placeholder="ex. Proximus Pickx" required maxlength="40"></div>
+        <div class="field"><label for="pfSite">Site web</label><input id="pfSite" name="site" class="input" inputmode="url" autocapitalize="off" placeholder="pickx.be"></div>
         <button class="btn" type="submit">${icon('plus')}Ajouter</button>
       </form>
+      <p class="help" style="margin-top:8px">Le logo est récupéré automatiquement à partir du site web.</p>
     </section>
 
     <section class="panel"><div class="panel-title">Données</div>
@@ -1554,7 +1579,7 @@ const ACTIONS = {
     const o = (ui.draft.providers || [])[+el.dataset.i]; if (!o) return;
     let p = platformForName(o.name);
     if (!p) {
-      p = { id: 'c-' + uid(), name: o.name, color: `hsl(${hueOf(o.name)} 45% 35%)`, fg: '#fff', mark: o.name.replace(/[^\p{L}\p{N}+]/gu, '').slice(0, 3), custom: true };
+      p = { id: 'c-' + uid(), name: o.name, color: `hsl(${hueOf(o.name)} 45% 35%)`, fg: '#fff', mark: o.name.replace(/[^\p{L}\p{N}+]/gu, '').slice(0, 3), domain: o.domain || '', custom: true };
       state.platforms.push(p); save();
     }
     if (!ui.draft.platforms.some(x => x.pid === p.id)) ui.draft.platforms.push({ pid: p.id, region: o.country, source: 'tvmaze' });
@@ -1563,6 +1588,12 @@ const ACTIONS = {
   'sb-add': () => { ui.draft.manualSeasons.push({ count: ui.draft.manualSeasons.at(-1)?.count || 10 }); $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
   'sb-remove': el => { ui.draft.manualSeasons.splice(+el.dataset.i, 1); if (ui.draft.seen.season > ui.draft.manualSeasons.length) ui.draft.seen = { season: 0, episode: 0 }; $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
 
+  'pf-suggest': el => {
+    const [name, domain, color] = SUGGESTED_PLATFORMS[+el.dataset.i] || [];
+    if (!name || state.platforms.some(p => p.domain === domain)) return;
+    state.platforms.push({ id: 'c-' + uid(), name, color, fg: '#fff', mark: name.slice(0, 2), domain, custom: true });
+    save(); render(); toast(`${name} ajoutée.`);
+  },
   install: async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => null); installEvent = null; render(); },
   'ep-view': el => { ui.epView = el.dataset.view; render(); },
   'ep-toggle': el => { const s = getShow(el.dataset.show); if (s) toggleEpisode(s, el.dataset.key); },
@@ -1684,7 +1715,7 @@ document.addEventListener('submit', ev => {
     ev.preventDefault();
     const name = f.name.value.trim(); if (!name) return;
     if (state.platforms.some(p => norm(p.name) === norm(name))) { toast('Cette plateforme existe déjà.', { type: 'info' }); return; }
-    state.platforms.push({ id: 'c-' + uid(), name, color: f.color.value, fg: '#fff', mark: (f.mark.value.trim() || name.slice(0, 2)), custom: true });
+    state.platforms.push({ id: 'c-' + uid(), name, color: `hsl(${hueOf(name)} 45% 35%)`, fg: '#fff', mark: name.replace(/[^\p{L}\p{N}+]/gu, '').slice(0, 3), domain: domainOf(f.site.value), custom: true });
     save(); render(); toast(`${name} ajoutée.`);
   }
 });
