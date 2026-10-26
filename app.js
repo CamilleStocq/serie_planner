@@ -335,7 +335,7 @@ function domainOf(input) {
 function pfBadge(p, cls = '') {
   if (!p) return '';
   const src = logoUrl(p);
-  const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.naturalWidth < 32 ? this.remove() : this.parentNode.classList.add('logo-ok')" onerror="this.remove()">` : '';
   return `<span class="pf ${src ? 'has-logo' : ''} ${cls}" style="--pc:${esc(p.color || '#333')};--pf:${esc(p.fg || '#fff')}" title="${esc(p.name)}" aria-label="${esc(p.name)}"><span class="pf-mark">${esc(p.mark || p.name.slice(0, 2))}</span>${img}</span>`;
 }
 function showPlatforms(show) { return show.platforms.map(x => ({ ...x, p: getPlatform(x.pid) })).filter(x => x.p); }
