@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Saison</title>
+  <meta name="description" content="Suivez vos séries, vos épisodes et les prochaines sorties.">
+  <meta name="theme-color" content="#0a0b10">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23ff5d47'/%3E%3Cpath d='M12 9.5v13l10-6.5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Navigation principale">
+      <a class="brand" href="#/home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7v10l8-5z"/></svg></span>
+        <span class="brand-name">Saison</span>
+      </a>
+      <button class="btn primary add-main" data-act="add-open">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Ajouter une série
+      </button>
+      <nav class="nav" id="sideNav"></nav>
+      <div class="sidebar-foot">
+        <button class="nav-link" data-act="theme-toggle" id="themeToggle"></button>
+        <p class="tmdb-note">Données séries : TMDB · Disponibilités : JustWatch</p>
+      </div>
+    </aside>
+
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+
+  <nav class="bottomnav" id="bottomNav" aria-label="Navigation"></nav>
+
+  <dialog id="modal" class="modal"></dialog>
+  <dialog id="confirm" class="modal modal-sm"></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+
+  <script src="app.js"></script>
+</body>
+</html>
