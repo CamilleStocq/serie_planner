@@ -1,7 +1,7 @@
 // Service worker : l'app s'ouvre même hors connexion.
 // Fichiers de l'app : réseau d'abord (toujours la dernière version), cache en secours.
 // Affiches : cache d'abord (elles ne changent pas).
-const APP_CACHE = 'saison-app-v13';
+const APP_CACHE = 'saison-app-v14';
 const IMG_CACHE = 'saison-images-v1';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './cloud.js', './firebase-config.js', './catalog.json', './manifest.webmanifest', './icons/icon-192.png'];
 
@@ -24,7 +24,8 @@ self.addEventListener('fetch', event => {
 
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req)
+      // Toujours revérifier auprès du serveur (le cache HTTP de GitHub Pages dure 10 min)
+      (req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req, { cache: 'no-cache' }))
         .then(res => {
           if (res.ok) { const copy = res.clone(); caches.open(APP_CACHE).then(c => c.put(req, copy)); }
           return res;

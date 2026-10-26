@@ -1108,3 +1108,4 @@ body.fullscreen .view { max-width: none; padding: 0; }
   transition: background var(--fast), border-color var(--fast), color var(--fast);
 }
 .no-chip.off { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
+.version-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

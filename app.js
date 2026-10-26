@@ -5,6 +5,9 @@
    ========================================================= */
 'use strict';
 
+// Version de l'app : à changer à chaque publication (node scripts/bump.js le fait)
+const APP_VERSION = '14';
+
 /* ---------- Constantes ---------- */
 const STORE_KEY = 'saison:data:v1';
 const CATALOG_API = 'https://api.tvmaze.com';
@@ -1666,6 +1669,7 @@ function viewSettings() {
       <div class="set-row"><div><div class="label">Restaurer</div><p>Remplace la bibliothèque actuelle par un fichier exporté.</p></div><button class="btn" data-act="data-import">${icon('upload')}Importer</button></div>
       <div class="set-row"><div><div class="label">Tout effacer</div><p>Supprime définitivement toutes les séries de ce navigateur.</p></div><button class="btn danger-ghost" data-act="data-reset">${icon('trash')}Effacer</button></div>
     </section>
+    <div class="version-row"><span class="help">Saison · version ${APP_VERSION}</span><button class="btn sm" data-act="check-update">${icon('refresh', 'sm')}Rechercher une mise à jour</button></div>
     <p class="help">Données des séries fournies par TVmaze (tvmaze.com), sous licence CC BY-SA.</p>
   </div>`;
 }
@@ -2433,6 +2437,39 @@ window.addEventListener('pagehide', flushAll);
 // Demande au navigateur de ne pas effacer les données de Saison pour faire de la place
 if (navigator.storage?.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
 
+/* ---------- Mises à jour de l'app ---------- */
+// Sur téléphone, rouvrir l'app reprend souvent la page restée en mémoire, sans la recharger.
+// On vérifie donc la version publiée à l'ouverture et à chaque retour dans l'app.
+let lastUpdateCheck = 0;
+async function checkForUpdate({ manual = false, fresh = false } = {}) {
+  if (!/^https?:$/.test(location.protocol)) return;
+  if (!manual && Date.now() - lastUpdateCheck < 60e3) return;
+  lastUpdateCheck = Date.now();
+  let remote = null;
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) remote = String((await r.json()).v || '');
+  } catch { /* hors connexion : on réessaiera */ }
+  if (!remote) { if (manual) toast('Impossible de vérifier pour le moment : pas de connexion.', { type: 'error' }); return; }
+  if (remote === APP_VERSION) { if (manual) toast(`Saison est à jour (version ${APP_VERSION}).`); return; }
+  try { (await navigator.serviceWorker?.getRegistration())?.update(); } catch { /* */ }
+  flushAll();
+  // Une seule tentative automatique par version, pour ne jamais boucler si le serveur sert encore l'ancien fichier
+  let tried = '';
+  try { tried = sessionStorage.getItem('saison:reloadedFor') || ''; } catch { /* */ }
+  const busy = modal.open || document.activeElement?.matches('input, textarea, select') || ui.ob;
+  if ((manual || ((fresh || !busy) && tried !== remote))) {
+    try { sessionStorage.setItem('saison:reloadedFor', remote); } catch { /* */ }
+    location.reload();
+    return;
+  }
+  toast('Une nouvelle version de Saison est disponible.', { type: 'info', timeout: 15000, action: { label: 'Mettre à jour', fn: () => location.reload() } });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate({ fresh: true }); });
+window.addEventListener('pageshow', e => { if (e.persisted) checkForUpdate({ fresh: true }); });
+setTimeout(() => checkForUpdate(), 3000);
+ACTIONS['check-update'] = () => checkForUpdate({ manual: true });
+
 /* ---------- Démarrage ---------- */
 window.addEventListener('hashchange', () => { render(); saveView(); });
 window.addEventListener('storage', e => { if (e.key === storeKey()) { state = load(); render(); } });
@@ -2471,7 +2508,7 @@ setInterval(() => {
 checkNotifications();
 setTimeout(backgroundSync, 1500);
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* hors ligne indisponible */ }));
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { /* hors ligne indisponible */ }));
 }
 // Revenir sur l'app (téléphone déverrouillé, onglet repris) : rafraîchir dates et comptes à rebours
 document.addEventListener('visibilitychange', () => {

@@ -44,6 +44,14 @@ Une série absente du catalogue peut être ajoutée manuellement.
 - Réglages › Données : export et import JSON pour sauvegarder ou changer de navigateur.
 - Réglages › Agenda : export `.ics` des prochaines sorties, avec rappels.
 
+## Publier une mise à jour
+
+```bash
+node scripts/bump.js
+```
+
+Puis commit et push. Le numéro de version change partout (app, `version.json`, cache) : à la prochaine ouverture, les téléphones détectent la nouvelle version et se rechargent tout seuls. Réglages affiche la version et un bouton « Rechercher une mise à jour ».
+
 ## Fichiers
 
 - `index.html` : structure
