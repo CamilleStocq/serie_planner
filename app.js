@@ -1717,7 +1717,7 @@ const ACTIONS = {
     save(); render(); toast(`${name} ajoutée.`);
   },
   install: async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => null); installEvent = null; render(); },
-  'ep-view': el => { ui.epView = el.dataset.view; render(); },
+  'ep-view': el => { ui.epView = el.dataset.view; render(); saveView(); },
   'ep-toggle': el => { const s = getShow(el.dataset.show); if (s) toggleEpisode(s, el.dataset.key); },
   'ep-prev': el => { const s = getShow(el.dataset.show); if (s) markPrevious(s, el.dataset.key); },
   'ep-edit': el => { const s = getShow(el.dataset.show); if (s) openEpisodeEditor(s, el.dataset.key); },
@@ -1769,10 +1769,10 @@ const ACTIONS = {
   'show-rating': el => { const s = getShow(el.dataset.show); const n = +el.dataset.n; s.rating = s.rating === n ? 0 : n; save(); render(); },
   'set-status': el => { const s = getShow(el.dataset.show); s.status = el.dataset.status; save(); render(); toast(`Classée dans « ${CAT[s.status].label} ».`); },
   'overview-toggle': () => { ui.expandOverview = !ui.expandOverview; render(); },
-  'lib-cat': el => { ui.lib.cat = el.dataset.cat; render(); },
+  'lib-cat': el => { ui.lib.cat = el.dataset.cat; render(); saveView(); },
   'lib-goto': el => { ui.lib = { ...ui.lib, cat: el.dataset.cat, q: '', platform: '', genre: '', air: '' }; },
   'lib-reset': () => { ui.lib = { ...ui.lib, q: '', platform: '', genre: '', air: '' }; render(); },
-  'cal-range': el => { ui.cal.range = el.dataset.range; render(); },
+  'cal-range': el => { ui.cal.range = el.dataset.range; render(); saveView(); },
   'ics-export': () => exportICS(),
   'notif-toggle': (el, ev) => { if (el.type === 'checkbox') ev.preventDefault(); toggleNotifications(); },
   'theme-toggle': () => { state.settings.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; save(); applyTheme(); render(); },
@@ -1800,7 +1800,7 @@ const ACTIONS = {
 };
 const CHANGES = {
   'show-status': el => { const s = getShow(el.dataset.show); s.status = el.value; save(); render(); toast(`Classée dans « ${CAT[s.status].label} ».`); },
-  'lib-filter': el => { ui.lib[el.dataset.key] = el.value; renderLibGrid(); },
+  'lib-filter': el => { ui.lib[el.dataset.key] = el.value; renderLibGrid(); saveView(); },
   'form-pf-region': el => { const x = ui.draft.platforms.find(p => p.pid === el.dataset.pid); if (x) x.region = el.value; },
   'seen-season': el => { ui.draft.seen = { season: +el.value, episode: +el.value ? (draftSeasonCounts(ui.draft).find(s => s.n === +el.value)?.c || 1) : 0 }; $('#seenSection').innerHTML = seenHTML(ui.draft); },
   'seen-episode': el => { ui.draft.seen.episode = +el.value; },
@@ -1823,11 +1823,23 @@ document.addEventListener('click', ev => {
 });
 document.addEventListener('change', ev => { const el = ev.target.closest('[data-change]'); if (el) CHANGES[el.dataset.change]?.(el, ev); });
 document.addEventListener('input', ev => { const el = ev.target.closest('[data-input]'); if (el) INPUTS[el.dataset.input]?.(el, ev); });
+let notesTimer = 0;
+function saveNotesField(el) {
+  const s = getShow(el.dataset.show);
+  if (s && (s.notes || '') !== el.value) { s.notes = el.value; s.updatedAt = Date.now(); save(); return true; }
+  return false;
+}
+document.addEventListener('input', ev => {
+  const el = ev.target.closest('[data-blur="show-notes"]');
+  if (!el) return;
+  clearTimeout(notesTimer);
+  notesTimer = setTimeout(() => saveNotesField(el), 400);
+});
 document.addEventListener('focusout', ev => {
   const el = ev.target.closest('[data-blur="show-notes"]');
   if (!el) return;
-  const s = getShow(el.dataset.show);
-  if (s && (s.notes || '') !== el.value) { s.notes = el.value; save(); toast('Notes enregistrées.'); }
+  clearTimeout(notesTimer);
+  saveNotesField(el);
 });
 document.addEventListener('submit', ev => {
   const f = ev.target;
@@ -2126,8 +2138,29 @@ async function quickAdd(id, status = 'planned', frTitle = '') {
 
 /* ---------- Questionnaire de la première ouverture ---------- */
 const OB_STEPS = ['hello', 'genres', 'mood', 'format', 'langs', 'platforms', 'favs', 'done'];
-function startOnboarding() {
+const OB_DRAFT_KEY = 'saison:onboarding';
+function saveObDraft() {
+  if (!ui.ob) return;
+  const d = ui.ob.d;
+  try {
+    localStorage.setItem(OB_DRAFT_KEY, JSON.stringify({ step: ui.ob.step, d: { ...d, genres: [...d.genres], langs: [...d.langs], platforms: [...d.platforms] } }));
+  } catch { /* stockage indisponible */ }
+}
+function readObDraft() {
+  try {
+    const x = JSON.parse(localStorage.getItem(OB_DRAFT_KEY) || 'null');
+    if (!x || !x.d) return null;
+    return { step: x.step || 0, q: '', results: [], searching: false, d: { ...x.d, genres: new Set(x.d.genres), langs: new Set(x.d.langs), platforms: new Set(x.d.platforms) } };
+  } catch { return null; }
+}
+const clearObDraft = () => { try { localStorage.removeItem(OB_DRAFT_KEY); } catch { /* */ } };
+// Prépare le questionnaire (reprend le brouillon si demandé), sans rien afficher
+function initOnboarding(resume = false) {
   const p = state.profile || {};
+  const draft = resume ? readObDraft() : null;
+  loadCatalog();
+  if (draft) { ui.ob = draft; return; }
+  clearObDraft();
   ui.ob = {
     step: 0, q: '', results: [], searching: false,
     d: {
@@ -2137,12 +2170,15 @@ function startOnboarding() {
       favs: [...(p.favs || [])], addFavs: false,
     },
   };
-  loadCatalog();
+}
+function startOnboarding() {
+  initOnboarding(false);
   location.hash = '#/welcome';
   render();
 }
 function viewOnboarding() {
-  if (!ui.ob) startOnboarding();
+  if (!ui.ob) initOnboarding(true);
+  saveObDraft();
   const o = ui.ob, d = o.d, step = OB_STEPS[o.step];
   const total = OB_STEPS.length - 1;
   const tile = (act, val, on, emoji, label, sub = '') => `<button class="ob-tile ${on ? 'on' : ''}" data-act="${act}" data-v="${esc(val)}" aria-pressed="${on}"><span class="ob-emoji" aria-hidden="true">${emoji}</span><b>${esc(label)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</button>`;
@@ -2253,6 +2289,7 @@ async function finishOnboarding(skipped = false) {
   save();
   const favs = !skipped && o.d.addFavs ? [...o.d.favs] : [];
   ui.ob = null;
+  clearObDraft();
   location.hash = '#/home';
   render();
   if (favs.length) {
@@ -2286,7 +2323,7 @@ Object.assign(ACTIONS, {
   'ob-start': () => startOnboarding(),
   'ob-next': () => { ui.ob.step = Math.min(OB_STEPS.length - 1, ui.ob.step + 1); render(); },
   'ob-back': () => { ui.ob.step = Math.max(0, ui.ob.step - 1); render(); },
-  'ob-skip': () => { if (state.profile?.done) { ui.ob = null; location.hash = '#/settings'; render(); } else finishOnboarding(true); },
+  'ob-skip': () => { if (state.profile?.done) { ui.ob = null; clearObDraft(); location.hash = '#/settings'; render(); } else finishOnboarding(true); },
   'ob-finish': () => finishOnboarding(false),
   'ob-genre': el => { const s = ui.ob.d.genres, v = el.dataset.v; s.has(v) ? s.delete(v) : s.add(v); render(); },
   'ob-mood': el => { ui.ob.d.mood = el.dataset.v; render(); },
@@ -2330,11 +2367,11 @@ Object.assign(ACTIONS, {
   },
 });
 Object.assign(INPUTS, {
-  'ob-name': el => { ui.ob.d.name = el.value; },
+  'ob-name': el => { ui.ob.d.name = el.value; saveObDraft(); },
   'ob-q': el => obSearch(el.value),
 });
 Object.assign(CHANGES, {
-  'ob-addfavs': el => { ui.ob.d.addFavs = el.checked; },
+  'ob-addfavs': el => { ui.ob.d.addFavs = el.checked; saveObDraft(); },
 });
 document.addEventListener('submit', async ev => {
   if (ev.target.id !== 'authForm') return;
@@ -2350,9 +2387,44 @@ document.addEventListener('submit', async ev => {
   } catch (err) { ui.authError = window.cloud.errorText(err); render(); }
 });
 
+/* ---------- Reprise à l'identique ---------- */
+const VIEW_KEY = 'saison:view';
+function saveView() {
+  const r = location.hash;
+  const page = /^#\/(home|library|calendar|discover|settings|show\/[\w-]+)$/.test(r) ? r : undefined;
+  try {
+    const prev = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ page: page || prev.page, lib: ui.lib, cal: ui.cal, epView: ui.epView }));
+  } catch { /* stockage indisponible */ }
+}
+function restoreView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
+    if (v.lib) ui.lib = { ...ui.lib, ...v.lib, q: '' };
+    if (v.cal) ui.cal = { ...ui.cal, ...v.cal };
+    if (v.epView) ui.epView = v.epView;
+    const show = v.page && v.page.startsWith('#/show/') ? v.page.slice(7) : null;
+    if (v.page && (!show || getShow(show))) return v.page;
+  } catch { /* */ }
+  return '#/home';
+}
+// Juste avant que l'app soit mise en arrière-plan ou fermée : tout est écrit
+function flushAll() {
+  const notes = document.activeElement?.closest?.('[data-blur="show-notes"]');
+  if (notes) { clearTimeout(notesTimer); saveNotesField(notes); }
+  saveObDraft();
+  saveView();
+  persistLocal();
+  if (account && window.cloud) window.cloud.flush?.();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+window.addEventListener('pagehide', flushAll);
+// Demande au navigateur de ne pas effacer les données de Saison pour faire de la place
+if (navigator.storage?.persist) navigator.storage.persisted().then(p => p || navigator.storage.persist()).catch(() => {});
+
 /* ---------- Démarrage ---------- */
-window.addEventListener('hashchange', render);
-window.addEventListener('storage', e => { if (e.key === STORE_KEY) { state = load(); render(); } });
+window.addEventListener('hashchange', () => { render(); saveView(); });
+window.addEventListener('storage', e => { if (e.key === storeKey()) { state = load(); render(); } });
 if (CLOUD_ON) {
   // Hors connexion au démarrage : on rouvre le dernier compte avec ses données locales
   authTimer = setTimeout(() => {
@@ -2365,7 +2437,11 @@ if (CLOUD_ON) {
   }, 6000);
 }
 applyTheme();
-if (!location.hash) history.replaceState(null, '', '#/home');
+{
+  const start = restoreView();
+  // À l'ouverture de l'app, on revient sur la dernière page consultée
+  if (!location.hash || location.hash === '#/home') history.replaceState(null, '', start);
+}
 render();
 
 // Comptes à rebours en direct + passage automatique « à venir » → « disponible »

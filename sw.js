@@ -1,7 +1,7 @@
 // Service worker : l'app s'ouvre même hors connexion.
 // Fichiers de l'app : réseau d'abord (toujours la dernière version), cache en secours.
 // Affiches : cache d'abord (elles ne changent pas).
-const APP_CACHE = 'saison-app-v10';
+const APP_CACHE = 'saison-app-v11';
 const IMG_CACHE = 'saison-images-v1';
 const SHELL = ['./', './index.html', './styles.css', './app.js', './cloud.js', './firebase-config.js', './catalog.json', './manifest.webmanifest', './icons/icon-192.png'];
 

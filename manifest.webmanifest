@@ -3,7 +3,7 @@
   "short_name": "Saison",
   "description": "Suivez vos séries, cochez vos épisodes et voyez les prochaines sorties.",
   "lang": "fr",
-  "start_url": "./#/home",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
