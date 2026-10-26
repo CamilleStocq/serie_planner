@@ -2390,11 +2390,8 @@ document.addEventListener('submit', async ev => {
 /* ---------- Reprise à l'identique ---------- */
 const VIEW_KEY = 'saison:view';
 function saveView() {
-  const r = location.hash;
-  const page = /^#\/(home|library|calendar|discover|settings|show\/[\w-]+)$/.test(r) ? r : undefined;
   try {
-    const prev = JSON.parse(localStorage.getItem(VIEW_KEY) || '{}');
-    localStorage.setItem(VIEW_KEY, JSON.stringify({ page: page || prev.page, lib: ui.lib, cal: ui.cal, epView: ui.epView }));
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ lib: ui.lib, cal: ui.cal, epView: ui.epView }));
   } catch { /* stockage indisponible */ }
 }
 function restoreView() {
@@ -2403,10 +2400,7 @@ function restoreView() {
     if (v.lib) ui.lib = { ...ui.lib, ...v.lib, q: '' };
     if (v.cal) ui.cal = { ...ui.cal, ...v.cal };
     if (v.epView) ui.epView = v.epView;
-    const show = v.page && v.page.startsWith('#/show/') ? v.page.slice(7) : null;
-    if (v.page && (!show || getShow(show))) return v.page;
   } catch { /* */ }
-  return '#/home';
 }
 // Juste avant que l'app soit mise en arrière-plan ou fermée : tout est écrit
 function flushAll() {
@@ -2437,11 +2431,9 @@ if (CLOUD_ON) {
   }, 6000);
 }
 applyTheme();
-{
-  const start = restoreView();
-  // À l'ouverture de l'app, on revient sur la dernière page consultée
-  if (!location.hash || location.hash === '#/home') history.replaceState(null, '', start);
-}
+// À l'ouverture, l'app démarre toujours sur l'Accueil ; onglets, filtres et vue des épisodes sont retrouvés
+restoreView();
+if (!location.hash) history.replaceState(null, '', '#/home');
 render();
 
 // Comptes à rebours en direct + passage automatique « à venir » → « disponible »
