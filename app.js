@@ -6,7 +6,7 @@
 'use strict';
 
 // Version de l'app : à changer à chaque publication (node scripts/bump.js le fait)
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 
 /* ---------- Constantes ---------- */
 const STORE_KEY = 'saison:data:v1';
@@ -190,6 +190,7 @@ function normalize(d) {
   for (const p of out.platforms) { const def = base.platforms.find(b => b.id === p.id); if (def && !p.domain) p.domain = def.domain; }
   if ((d.settings || {}).themeV !== 2) { out.settings.theme = 'light'; out.settings.themeV = 2; }
   out.dismissed = Array.isArray(d.dismissed) ? d.dismissed : [];
+  out.daily = d.daily && typeof d.daily === 'object' ? d.daily : null;
   out.shows = (d.shows || []).map(normShow);
   return out;
 }
@@ -2108,18 +2109,69 @@ function recCard(r) {
     </div>
   </article>`;
 }
+/* ---------- Sélection du jour ----------
+   Chaque jour, une nouvelle liste tirée des meilleures recommandations,
+   sans reprendre les séries déjà proposées les jours précédents.
+   Elle reste la même toute la journée, et se recalcule si les goûts changent. */
+const DAILY_SIZE = 48;
+const todayKey = () => dayStr(new Date());
+function dayStr(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function seeded(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return ((h >>> 0) % 100000) / 100000; }
+function tasteSig() {
+  const p = state.profile || {};
+  return JSON.stringify([p.genres, p.dislikes, p.mood, p.format, p.length, p.langs, p.platforms, (p.favs || []).map(f => f.id)]);
+}
+function dailyPicks() {
+  if (!catalogCache?.length) return [];
+  const day = todayKey();
+  const sig = tasteSig();
+  let d = state.daily;
+  const ranked = recommend(400);
+  const byId = new Map(ranked.map(r => [r.c.id, r]));
+  if (!d || d.day !== day || d.sig !== sig) {
+    const seen = new Set(d?.seen || []);
+    if (d && d.day !== day) (d.ids || []).forEach(id => seen.add(id)); // la liste d'hier rejoint l'historique
+    let pool = ranked.filter(r => !seen.has(r.c.id));
+    if (pool.length < DAILY_SIZE) pool = ranked; // tout a déjà été proposé : on recommence
+    // Les meilleures d'abord, avec un peu de hasard propre au jour pour varier
+    const ids = pool
+      .map((r, i) => ({ id: r.c.id, k: r.score - i * 0.02 + seeded(day + ':' + r.c.id) * 4 }))
+      .sort((a, b) => b.k - a.k).slice(0, DAILY_SIZE).map(x => x.id);
+    d = state.daily = { day, sig, ids, seen: [...seen].slice(-800) };
+    save();
+  }
+  const owned = new Set(state.shows.map(sh => sh.tvmazeId).filter(Boolean));
+  const dismissed = new Set(state.dismissed || []);
+  const list = d.ids.map(id => byId.get(id)).filter(r => r && !owned.has(r.c.id) && !dismissed.has(r.c.id));
+  // Une série ajoutée ou écartée est remplacée pour garder une liste complète
+  if (list.length < DAILY_SIZE) {
+    const taken = new Set([...d.ids, ...d.seen]);
+    for (const r of ranked) {
+      if (list.length >= DAILY_SIZE) break;
+      if (!taken.has(r.c.id)) { list.push(r); d.ids.push(r.c.id); taken.add(r.c.id); }
+    }
+  }
+  return list;
+}
+function nextSelectionIn() {
+  const now = new Date();
+  const mins = Math.max(1, Math.round((startOfDay(now).getTime() + DAY - now) / 6e4));
+  return mins >= 60 ? `${Math.floor(mins / 60)} h` : `${mins} min`;
+}
+
 function recsSectionHTML(limit = 12) {
   if (!catalogCache) { loadCatalog().then(() => safeRender()); return ''; }
-  const recs = recommend(limit);
+  const recs = dailyPicks().slice(0, limit);
   if (!recs.length) return '';
-  return `<section class="section"><div class="section-head"><h2 class="section-title">Pour vous</h2><a class="section-link" href="#/discover">Tout voir ${icon('chevron', 'sm')}</a></div>
+  return `<section class="section"><div class="section-head"><h2 class="section-title">Pour vous aujourd'hui</h2><a class="section-link" href="#/discover">Tout voir ${icon('chevron', 'sm')}</a></div>
     <div class="rrail">${recs.map(recCard).join('')}</div></section>`;
 }
 function viewDiscover() {
   if (!catalogCache) { loadCatalog().then(() => safeRender()); return `<div class="loading-block"><div class="spinner"></div>Préparation de vos recommandations…</div>`; }
   const p = state.profile || {};
-  const recs = recommend(48);
+  const recs = dailyPicks();
   return `<header class="page-head"><div><h1 class="page-title">Découvrir</h1><p class="page-sub">${p.done && !p.skipped ? `${esc(personaOf(p))} · choisies selon vos goûts et votre bibliothèque.` : 'Des séries populaires. Répondez au questionnaire pour des suggestions sur mesure.'}</p></div></header>
+    <div class="daily-banner"><span class="daily-icon" aria-hidden="true">${icon('sparkle')}</span><div><b>Sélection du jour</b><span>Nouvelle sélection dans <span id="dailyIn">${nextSelectionIn()}</span></span></div></div>
     ${!p.done || p.skipped ? `<div class="notice" style="margin:12px 0 18px">${icon('sparkle')}<div><p>Dites-nous ce que vous aimez en 1 minute pour des recommandations personnalisées.</p><div class="actions"><button class="btn sm primary" data-act="ob-start">Répondre au questionnaire</button></div></div></div>` : ''}
     ${recs.length ? `<div class="rgrid">${recs.map(recCard).join('')}</div>` : emptyHTML({ ic: 'sparkle', title: 'Vous avez tout vu !', text: 'Plus aucune suggestion pour le moment. Revenez après avoir ajouté quelques séries.' })}
     <p class="help" style="margin-top:20px">Touchez une affiche pour voir le résumé. ✕ pour l'écarter, + pour l'ajouter à « À regarder ».</p>`;
@@ -2469,6 +2521,12 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pageshow', e => { if (e.persisted) checkForUpdate({ fresh: true }); });
 setTimeout(() => checkForUpdate(), 3000);
 ACTIONS['check-update'] = () => checkForUpdate({ manual: true });
+let shownDay = todayKey();
+setInterval(() => {
+  const el = $('#dailyIn'); if (el) el.textContent = nextSelectionIn();
+  if (todayKey() !== shownDay) { shownDay = todayKey(); if (['home', 'discover'].includes(ui.route.name)) safeRender(); }
+}, 60e3);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayKey() !== shownDay) { shownDay = todayKey(); safeRender(); } });
 
 /* ---------- Démarrage ---------- */
 window.addEventListener('hashchange', () => { render(); saveView(); });
