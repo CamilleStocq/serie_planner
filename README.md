@@ -4,6 +4,15 @@ Application web sans installation ni dépendance : HTML, CSS et JavaScript.
 
 En ligne : https://camillestocq.github.io/serie_planner/
 
+## Sur le téléphone
+
+Saison est pensée d'abord pour le téléphone et s'installe comme une app :
+
+- **iPhone** : ouvrez le site dans Safari, touchez Partager, puis « Sur l'écran d'accueil ».
+- **Android** : ouvrez le site dans Chrome, puis « Installer l'application » (ou Réglages › Installer dans Saison).
+
+Une fois installée, elle s'ouvre en plein écran et fonctionne même avec une connexion faible.
+
 ## Lancer en local
 
 ```bash
@@ -34,6 +43,8 @@ Une série absente du catalogue peut être ajoutée manuellement.
 - `index.html` : structure
 - `styles.css` : design (thèmes sombre et clair)
 - `app.js` : logique (état, catalogue, épisodes, calendrier, rappels)
+- `sw.js` : mise en cache pour l'usage hors connexion
+- `manifest.webmanifest`, `icons/` : installation sur l'écran d'accueil
 - `serve.js` : petit serveur local
 
 Données des séries : TVmaze (CC BY-SA) et Wikidata (CC0).

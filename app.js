@@ -561,7 +561,7 @@ function viewLibrary() {
   const opt = (v, l, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`;
   return `<header class="page-head"><div><h1 class="page-title">Bibliothèque</h1><p class="page-sub">${plural(state.shows.length, 'série', 'séries')}</p></div>
       <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter</button></header>
-    <div class="seg" role="tablist" style="margin-bottom:16px">
+    <div class="seg lib-tabs" role="tablist">
       <button role="tab" class="${L.cat === 'all' ? 'on' : ''}" data-act="lib-cat" data-cat="all" aria-selected="${L.cat === 'all'}">Toutes <span class="count">${state.shows.length}</span></button>
       ${CATEGORIES.map(c => `<button role="tab" class="${L.cat === c.id ? 'on' : ''}" data-act="lib-cat" data-cat="${c.id}" aria-selected="${L.cat === c.id}"><span class="tab-dot" style="background:${c.color}"></span>${c.label} <span class="count">${counts[c.id]}</span></button>`).join('')}
     </div>
@@ -697,6 +697,7 @@ function viewShow(id) {
         ${show.overview ? `<p class="overview ${ui.expandOverview ? '' : 'clamp'}">${esc(show.overview)}</p>${show.overview.length > 320 ? `<button class="link-btn" data-act="overview-toggle">${ui.expandOverview ? 'Réduire' : 'Lire la suite'}</button>` : ''}` : `<p class="overview muted">Aucun synopsis disponible.</p>`}
         <div class="pf-row" style="margin-top:14px">${pfs.length ? pfs.map(x => `<span class="pf-tag">${pfBadge(x.p)}${esc(x.p.name)}${x.region ? ` <small>${esc(x.region)}</small>` : ''}</span>`).join('') : `<span class="muted" style="font-size:14px">Plateforme non renseignée</span>`}</div>
       </div>
+      ${st.next ? `<button class="btn primary next-now" data-act="ep-toggle" data-show="${show.id}" data-key="${epKey(st.next)}">${icon('check')}Marquer ${epCode(st.next)} comme vu</button>` : ''}
       <div class="detail-actions">
         <label class="visually-hidden" for="catSel">Catégorie</label>
         <select id="catSel" class="select" data-change="show-status" data-show="${show.id}">${CATEGORIES.map(c => `<option value="${c.id}" ${c.id === show.status ? 'selected' : ''}>${c.label}</option>`).join('')}</select>
@@ -840,12 +841,14 @@ function afterWatch(show, snap, keys, msg) {
     toast(msg + movedMsg, { action: { label: 'Annuler', fn: () => restore(show.id, snap) } });
   }
 }
+const buzz = () => { try { navigator.vibrate?.(12); } catch { /* non pris en charge */ } };
 function toggleEpisode(show, key) {
   const e = findEp(show, key); if (!e) return;
   const st = computeStates(show).get(e);
   if (st === 'upcoming' && !e.watched) { toast("Cet épisode n'est pas encore sorti.", { type: 'info' }); return; }
   const snap = snapshot(show);
   e.watched = !e.watched;
+  if (e.watched) buzz();
   e.watchedAt = e.watched ? Date.now() : null;
   afterWatch(show, snap, [key], `${epCode(e)} ${e.watched ? 'marqué comme vu' : 'marqué comme non vu'}`);
 }
@@ -1458,12 +1461,29 @@ function download(name, content, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/* ---------- Installation sur le téléphone ---------- */
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvent = e; if (ui.route.name === 'settings') render(); });
+window.addEventListener('appinstalled', () => { installEvent = null; toast('Saison est installée sur votre écran d\'accueil.'); render(); });
+function installPanelHTML() {
+  let body;
+  if (isStandalone()) body = `<p class="status-line ok">${icon('check', 'sm')}Saison est installée sur cet appareil.</p>`;
+  else if (installEvent) body = `<div class="set-row"><div><div class="label">Ajouter à l'écran d'accueil</div><p>Saison s'ouvre alors comme une vraie app, en plein écran, même avec une connexion faible.</p></div><button class="btn primary" data-act="install">${icon('download')}Installer</button></div>`;
+  else if (isIOS()) body = `<p class="help" style="font-size:15px">Pour l'avoir comme une vraie app sur votre iPhone :</p>
+      <ol class="install-steps"><li>Ouvrez ce site dans <b>Safari</b>.</li><li>Touchez le bouton <b>Partager</b> (le carré avec une flèche vers le haut).</li><li>Choisissez <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.</li></ol>`;
+  else body = `<p class="help" style="font-size:15px">Sur votre téléphone, ouvrez ce site puis choisissez <b>Ajouter à l'écran d'accueil</b> (ou <b>Installer l'application</b>) dans le menu du navigateur.</p>`;
+  return `<section class="panel"><div class="panel-title">Installer sur le téléphone</div>${body}</section>`;
+}
+
 /* ---------- Vue : Réglages ---------- */
 function viewSettings() {
   const S = state.settings;
   const used = id => state.shows.filter(s => s.platforms.some(x => x.pid === id)).length;
   return `<header class="page-head"><div><h1 class="page-title">Réglages</h1><p class="page-sub">Vos données restent dans ce navigateur.</p></div></header>
   <div class="settings">
+    ${isStandalone() ? '' : installPanelHTML()}
     <section class="panel"><div class="panel-title">Catalogue de séries</div>
       <p class="status-line ok">${icon('check', 'sm')}Connecté au catalogue TVmaze : aucune clé ni compte nécessaire.</p>
       <p class="help" style="font-size:14px;margin-top:8px">Plus de 80 000 séries du monde entier, avec affiches, saisons, épisodes, dates et heures de diffusion. Les résumés sont souvent en anglais : vous pouvez les modifier sur chaque fiche.</p>
@@ -1543,6 +1563,7 @@ const ACTIONS = {
   'sb-add': () => { ui.draft.manualSeasons.push({ count: ui.draft.manualSeasons.at(-1)?.count || 10 }); $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
   'sb-remove': el => { ui.draft.manualSeasons.splice(+el.dataset.i, 1); if (ui.draft.seen.season > ui.draft.manualSeasons.length) ui.draft.seen = { season: 0, episode: 0 }; $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
 
+  install: async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice.catch(() => null); installEvent = null; render(); },
   'ep-view': el => { ui.epView = el.dataset.view; render(); },
   'ep-toggle': el => { const s = getShow(el.dataset.show); if (s) toggleEpisode(s, el.dataset.key); },
   'ep-prev': el => { const s = getShow(el.dataset.show); if (s) markPrevious(s, el.dataset.key); },
@@ -1717,3 +1738,10 @@ setInterval(() => {
 }, 15000);
 checkNotifications();
 setTimeout(backgroundSync, 1500);
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* hors ligne indisponible */ }));
+}
+// Revenir sur l'app (téléphone déverrouillé, onglet repris) : rafraîchir dates et comptes à rebours
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !modal.open && !document.activeElement?.matches('input, textarea, select')) { render(); backgroundSync(); }
+});

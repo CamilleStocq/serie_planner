@@ -825,3 +825,56 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
   .toolbar .search-box { grid-column: 1 / -1; }
   .toolbar .select { width: 100%; min-width: 0; font-size: 14px; }
 }
+
+/* =========================================================
+   Téléphone d'abord
+   ========================================================= */
+html { -webkit-tap-highlight-color: transparent; }
+a, button, label, select, input { touch-action: manipulation; }
+.next-now { align-self: flex-start; }
+.install-steps { margin: 10px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 15px; color: var(--ink-2); }
+
+/* Pas d'effets de survol « collés » au doigt ; un retour au toucher à la place */
+@media (hover: none) {
+  .card:hover .poster, .pcard:hover .pcard-link, .day-tile:hover, .feature:hover .feature-bg { transform: none; }
+  .ep-tile:not(:disabled):hover { transform: none; box-shadow: none; }
+  .ep-tile.is-available:hover { background: var(--pop); color: #1e1c2c; }
+  .card-quick:hover, .pcard-check:hover, .big-check.on-image:hover { background: var(--pop); color: #1e1c2c; transform: none; }
+  .big-check:hover { background: var(--surface); border-color: var(--line-2); color: var(--ink); }
+  .ep-tile:active, .pcard-check:active, .card-quick:active, .big-check:active, .btn:active, .day-tile:active { transform: scale(.94); }
+}
+
+@media (max-width: 860px) {
+  /* Encoche et barre d'état */
+  .view { padding-top: calc(20px + env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  /* Le « + » de la barre du bas suffit */
+  .page-head > .btn.primary { display: none; }
+  .page-title { font-size: 30px; }
+  .section { margin-top: 32px; }
+  /* Champs à 16 px : pas de zoom automatique sur iPhone */
+  .input, .select, .textarea, .toolbar .select { font-size: 16px; }
+  /* Cibles tactiles de 44 px minimum */
+  .icon-btn, .icon-btn.sm { width: 44px; height: 44px; }
+  .chk { width: 44px; height: 44px; }
+  .star { padding: 8px 4px; }
+  .star .ic { width: 24px; height: 24px; }
+  .link-btn { min-height: 44px; }
+  /* Onglets de la bibliothèque collants */
+  .lib-tabs { position: sticky; top: 0; z-index: 5; margin: 0 -16px; padding: env(safe-area-inset-top) 12px 0; background: var(--bg); }
+  /* Fiche : la grille d'épisodes avant les statistiques */
+  .detail-side { order: 0; }
+  .detail-grid { margin-top: 24px; gap: 20px; }
+  .next-now { align-self: stretch; grid-column: 1 / -1; min-height: 52px; font-size: 16px; }
+  .detail-hero .next-now { margin-top: 16px; }
+  .ep-grid { grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 12px 10px; }
+  .ep-tile { min-height: 56px; }
+  .season-head > .btn { min-height: 44px; }
+  /* Feuilles du bas */
+  .modal, .modal.modal-lg { max-height: 92dvh; }
+  .modal-inner { max-height: 92dvh; }
+  .modal-foot { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .modal-head { position: relative; padding-top: 22px; }
+  .modal-head::before { content: ""; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: 40px; height: 4px; border-radius: 99px; background: var(--line-2); }
+  /* Barre du bas */
+  .bottomnav { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+}
