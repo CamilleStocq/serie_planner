@@ -487,7 +487,7 @@ function viewHome() {
     totalWatched ? plural(totalWatched, 'épisode vu', 'épisodes vus') : '',
   ].filter(Boolean).join(', ');
   const head = `<header class="page-head"><div><h1 class="page-title">${hello}</h1>${summary ? `<p class="page-sub">${summary}.</p>` : ''}</div>
-    <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter une série</button></header>`;
+    <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter une série</button></header>${watchTimeCard()}`;
 
   const resume = all
     .filter(x => ['watching', 'paused'].includes(x.s.status) && x.st.next)
@@ -560,6 +560,61 @@ function tvIllustration() {
     <circle cx="160" cy="70" r="7" fill="var(--surface)"/><circle cx="160" cy="92" r="7" fill="var(--surface)"/>
     <rect x="152" y="108" width="16" height="6" rx="3" fill="var(--surface)"/>
   </svg>`;
+}
+/* ---------- Temps passé devant les séries ---------- */
+const DEFAULT_RUNTIME = 40; // minutes, si la durée d'un épisode est inconnue
+function watchTime(now = new Date()) {
+  const today = startOfDay(now);
+  const days = Array.from({ length: 7 }, (_, i) => ({ d: new Date(today.getTime() - (6 - i) * DAY), min: 0 }));
+  const weekStart = days[0].d.getTime();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  let total = 0, week = 0, month = 0, guessed = 0, eps = 0;
+  for (const show of state.shows) for (const e of allEps(show)) {
+    if (!e.watched) continue;
+    const known = e.runtime || show.runtime;
+    const min = known || DEFAULT_RUNTIME;
+    if (!known) guessed++;
+    total += min; eps++;
+    if (e.bulk || !e.watchedAt) continue;
+    if (e.watchedAt >= monthStart) month += min;
+    if (e.watchedAt >= weekStart) {
+      week += min;
+      const slot = days.find(x => dayDiff(new Date(e.watchedAt), x.d) === 0);
+      if (slot) slot.min += min;
+    }
+  }
+  return { total, week, month, days, guessed, eps };
+}
+function fmtDuration(min, long = false) {
+  min = Math.round(min);
+  if (min < 60) return `${min} min`;
+  const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+  if (d) return long ? `${plural(d, 'jour', 'jours')}${h ? ' et ' + plural(h, 'heure', 'heures') : ''}` : `${d} j${h ? ' ' + h + ' h' : ''}`;
+  return long ? `${plural(h, 'heure', 'heures')}${m ? ' ' + pad(m) : ''}` : `${h} h${m ? ' ' + pad(m) : ''}`;
+}
+function watchTimeCard() {
+  const t = watchTime();
+  if (!t.eps) return '';
+  const max = Math.max(...t.days.map(x => x.min), 1);
+  const dayName = new Intl.DateTimeFormat('fr-FR', { weekday: 'narrow' });
+  // Une comparaison parlante pour donner une idée de la durée
+  const films = Math.round(t.total / 120);
+  const days = Math.round(t.total / 1440 * 10) / 10;
+  const compare = t.total >= 1440 ? `Soit ${days.toLocaleString('fr-FR')} ${days >= 2 ? 'journées entières' : 'journée entière'} non-stop` : films >= 2 ? `L'équivalent de ${films} films` : '';
+  return `<section class="time-card" aria-label="Temps passé devant vos séries">
+    <div class="time-main">
+      <span class="time-icon" aria-hidden="true">${icon('clock')}</span>
+      <div><b class="time-total">${t.guessed ? '≈ ' : ''}${fmtDuration(t.total)}</b>
+      <span class="time-label">devant vos séries${compare ? ` · ${compare.toLowerCase()}` : ''}</span></div>
+    </div>
+    <div class="time-side">
+      <div class="time-mini"><b>${fmtDuration(t.week)}</b><span>cette semaine</span></div>
+      <div class="time-mini"><b>${fmtDuration(t.month)}</b><span>ce mois-ci</span></div>
+      <div class="time-chart" role="img" aria-label="Temps de visionnage des 7 derniers jours">
+        ${t.days.map((x, i) => `<span class="tc-day ${i === 6 ? 'today' : ''}" title="${esc(fmtDate(x.d, 'long'))} : ${x.min ? fmtDuration(x.min) : 'rien'}"><span class="tc-bar" style="height:${Math.max(x.min ? 12 : 4, Math.round((x.min / max) * 100))}%"></span><small>${esc(dayName.format(x.d))}</small></span>`).join('')}
+      </div>
+    </div>
+  </section>`;
 }
 function posterCard(s, st) {
   const e = st.next;
@@ -915,6 +970,7 @@ function toggleEpisode(show, key) {
   e.watched = !e.watched;
   if (e.watched) buzz();
   e.watchedAt = e.watched ? Date.now() : null;
+  delete e.bulk;
   afterWatch(show, snap, [key], `${epCode(e)} ${e.watched ? 'marqué comme vu' : 'marqué comme non vu'}`);
 }
 function markPrevious(show, key) {
@@ -924,7 +980,7 @@ function markPrevious(show, key) {
   const changed = [];
   for (const e of allEps(show)) {
     const before = e.season < target.season || (e.season === target.season && e.number <= target.number);
-    if (before && !e.watched && states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); changed.push(epKey(e)); }
+    if (before && !e.watched && states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); e.bulk = true; changed.push(epKey(e)); }
   }
   if (!changed.length) { toast('Tous les épisodes précédents sont déjà marqués comme vus.', { type: 'info' }); return; }
   afterWatch(show, snap, changed, `${plural(changed.length, 'épisode marqué', 'épisodes marqués')} comme vus jusqu'à ${epCode(target)}`);
@@ -938,7 +994,7 @@ function toggleSeason(show, num) {
   const changed = [];
   for (const e of markable) {
     if (e.watched === !allDone) continue;
-    e.watched = !allDone; e.watchedAt = e.watched ? Date.now() : null; changed.push(epKey(e));
+    e.watched = !allDone; e.watchedAt = e.watched ? Date.now() : null; e.bulk = e.watched || undefined; changed.push(epKey(e));
   }
   const skipped = se.episodes.length - markable.length;
   afterWatch(show, snap, changed, allDone ? `Saison ${num} décochée` : `Saison ${num} marquée comme vue${skipped ? ` (${plural(skipped, 'épisode à venir ignoré', 'épisodes à venir ignorés')})` : ''}`);
@@ -1408,7 +1464,7 @@ function submitShowForm(form) {
     const states = computeStates(show);
     for (const e of allEps(show)) {
       const before = e.season < dr.seen.season || (e.season === dr.seen.season && e.number <= dr.seen.episode);
-      if (before && states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); }
+      if (before && states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); e.bulk = true; }
     }
     show.lastWatchedAt = Date.now();
     if (show.status === 'planned' && allEps(show).some(e => e.watched)) show.status = 'watching';
@@ -2061,7 +2117,7 @@ async function quickAdd(id, status = 'planned', frTitle = '') {
   });
   if (status === 'completed') {
     const states = computeStates(show);
-    for (const e of allEps(show)) if (states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); }
+    for (const e of allEps(show)) if (states.get(e) !== 'upcoming') { e.watched = true; e.watchedAt = Date.now(); e.bulk = true; }
   }
   state.shows.unshift(show);
   save();
