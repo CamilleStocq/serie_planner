@@ -12,11 +12,11 @@ const TMDB_IMG = 'https://image.tmdb.org/t/p/'; // anciennes données éventuell
 const DAY = 864e5;
 
 const CATEGORIES = [
-  { id: 'watching', label: 'En cours', color: 'var(--accent)' },
-  { id: 'planned', label: 'À regarder', color: 'var(--info)' },
+  { id: 'watching', label: 'En cours', color: 'var(--info)' },
+  { id: 'planned', label: 'À regarder', color: 'var(--warn)' },
   { id: 'completed', label: 'Terminées', color: 'var(--ok)' },
-  { id: 'paused', label: 'En pause', color: 'var(--warn)' },
-  { id: 'dropped', label: 'Abandonnées', color: 'var(--muted)' },
+  { id: 'paused', label: 'En pause', color: 'var(--muted)' },
+  { id: 'dropped', label: 'Abandonnées', color: 'var(--danger)' },
 ];
 const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 
@@ -83,7 +83,7 @@ const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(3
 const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const pad = n => String(n).padStart(2, '0');
 const epKey = e => `${e.season}x${e.number}`;
-const epCode = e => `S${pad(e.season)} · E${pad(e.number)}`;
+const epCode = e => `S${e.season} E${e.number}`;
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -153,7 +153,7 @@ function defaultState() {
     version: 1,
     shows: [],
     platforms: DEFAULT_PLATFORMS.map(p => ({ ...p })),
-    settings: { region: guessRegion(), theme: 'dark', notifications: false },
+    settings: { region: guessRegion(), theme: 'light', themeV: 2, notifications: false },
     notified: {},
   };
 }
@@ -174,6 +174,7 @@ function normalize(d) {
   out.platforms = Array.isArray(d.platforms) ? d.platforms : base.platforms;
   const ids = new Set(out.platforms.map(p => p.id));
   for (const p of base.platforms) if (!ids.has(p.id)) out.platforms.push(p);
+  if ((d.settings || {}).themeV !== 2) { out.settings.theme = 'light'; out.settings.themeV = 2; }
   out.shows = (d.shows || []).map(normShow);
   return out;
 }
@@ -316,12 +317,13 @@ function pfBadge(p, cls = '') {
 function showPlatforms(show) { return show.platforms.map(x => ({ ...x, p: getPlatform(x.pid) })).filter(x => x.p); }
 function catChip(id) { const c = CAT[id]; return `<span class="chip" style="color:${c.color};background:color-mix(in srgb, ${c.color} 16%, transparent)"><span class="dot"></span>${c.label}</span>`; }
 function bar(pct, done) { return `<div class="bar ${done ? 'ok' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>`; }
+const soonLabel = t => (/^dans /.test(t) ? 'Sort ' + t : t === 'Demain' ? 'Sort demain' : t);
 function stateChip(st, show, e) {
   if (st === 'watched') return `<span class="chip ok">${icon('check', 'sm')}Regardé</span>`;
   if (st === 'available') return `<span class="chip accent">À regarder</span>`;
   if (st === 'upcoming') {
     const r = epRelease(show, e);
-    return `<span class="chip info">Prochainement · ${esc(countdown(r, isTimed(show, e)).text)}</span>`;
+    return `<span class="chip info">${esc(soonLabel(countdown(r, isTimed(show, e)).text))}</span>`;
   }
   return `<span class="chip muted">Date à confirmer</span>`;
 }
@@ -329,7 +331,7 @@ function emptyHTML({ ic = 'tv', title, text, actions = '' , sm = false }) {
   return `<div class="empty ${sm ? 'sm' : ''}">${icon(ic, 'lg')}<h3>${esc(title)}</h3>${text ? `<p>${text}</p>` : ''}${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
 }
 function showSubline(show, st) {
-  if (st.next) return { text: `${epCode(st.next)} à voir${st.available > 1 ? ` · ${st.available} dispo` : ''}`, hot: true };
+  if (st.next) return { text: `${epCode(st.next)} à voir${st.available > 1 ? `, ${st.available} dispo` : ''}`, hot: true };
   if (st.nextUp) {
     const r = epRelease(show, st.nextUp);
     return { text: r ? `Prochain : ${relDayLabel(r) || fmtDate(r)}` : 'Prochain : date à confirmer' };
@@ -390,18 +392,14 @@ function render() {
 function viewHome() {
   const h = new Date().getHours();
   const hello = h < 5 ? 'Bonne nuit' : h < 18 ? 'Bonjour' : 'Bonsoir';
-  const head = `<header class="page-head"><div><p class="eyebrow">${esc(FMT.long.format(new Date()))}</p><h1 class="page-title">${hello}</h1></div>
-    <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter une série</button></header>`;
 
   if (!state.shows.length) {
-    return head + `<section class="hero-empty">
-      <div><p class="eyebrow">Bienvenue dans Saison</p><h2>Toutes vos séries, au même endroit.</h2>
-      <p>Ajoutez ce que vous regardez, cochez vos épisodes au fil de l'eau et ne ratez plus aucune sortie.</p>
-      <div class="actions"><button class="btn primary" data-act="add-open">${icon('search')}Rechercher une série</button>
-      <button class="btn" data-act="add-open" data-tab="manual">Ajout manuel</button></div>
-      <p class="help" style="margin-top:14px">Plus de 80 000 séries du monde entier : affiches, épisodes et dates de sortie sont récupérés automatiquement, sans compte ni clé.</p>
-      </div>
-      <div class="hero-stack" aria-hidden="true">${['Le Bureau', 'Nuit Blanche', 'Saison 2'].map(t => posterHTML({ title: t })).join('')}</div>
+    return `<section class="welcome">
+      <h1 class="page-title">Vos séries, sans rien oublier.</h1>
+      <p class="welcome-text">Ajoutez ce que vous regardez, cochez les épisodes au fur et à mesure, et voyez d'un coup d'œil ce qui sort bientôt.</p>
+      <div class="welcome-actions"><button class="btn primary lg" data-act="add-open">${icon('search')}Rechercher une série</button>
+      <button class="btn ghost" data-act="add-open" data-tab="manual">Ajouter à la main</button></div>
+      <p class="help">Titres en français ou en version originale, séries du monde entier.</p>
     </section>`;
   }
 
@@ -409,47 +407,45 @@ function viewHome() {
   const all = state.shows.map(s => ({ s, st: stats(s, now) }));
   const watching = all.filter(x => x.s.status === 'watching');
   const totalWatched = all.reduce((a, x) => a + x.st.watched, 0);
-  const minutes = all.reduce((a, x) => a + x.st.minutes, 0);
   const rel = collectReleases(now);
-  const weekEnd = new Date(startOfDay(now).getTime() + 7 * DAY);
-  const thisWeek = rel.upcoming.filter(x => x.r < weekEnd);
 
-  const statsHTML = `<div class="stats">
-    <div class="stat"><b>${watching.length}</b><span>${watching.length > 1 ? 'séries en cours' : 'série en cours'}</span></div>
-    <div class="stat"><b>${totalWatched}</b><span>épisodes regardés</span></div>
-    <div class="stat"><b>${Math.round(minutes / 60)} h</b><span>de visionnage</span></div>
-    <div class="stat"><b>${thisWeek.length}</b><span>sorties cette semaine</span></div></div>`;
+  const summary = [
+    watching.length ? plural(watching.length, 'série en cours', 'séries en cours') : '',
+    totalWatched ? plural(totalWatched, 'épisode vu', 'épisodes vus') : '',
+  ].filter(Boolean).join(', ');
+  const head = `<header class="page-head"><div><h1 class="page-title">${hello}</h1>${summary ? `<p class="page-sub">${summary}.</p>` : ''}</div>
+    <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter une série</button></header>`;
 
   const resume = all
     .filter(x => ['watching', 'paused'].includes(x.s.status) && x.st.next)
     .sort((a, b) => (b.s.lastWatchedAt || b.s.addedAt) - (a.s.lastWatchedAt || a.s.addedAt));
   const resumeHTML = resume.length
-    ? `<div class="rail">${resume.map(({ s, st }) => resumeCard(s, st)).join('')}</div>`
-    : emptyHTML({ sm: true, ic: 'play', title: watching.length ? 'Vous êtes à jour' : 'Rien en cours', text: watching.length ? 'Aucun épisode disponible en attente pour vos séries en cours.' : 'Passez une série en « En cours » pour la retrouver ici.' });
+    ? `<ul class="up-list">${resume.map(({ s, st }) => upRow(s, st)).join('')}</ul>`
+    : emptyHTML({ sm: true, ic: 'play', title: watching.length ? 'Vous êtes à jour' : 'Rien en cours', text: watching.length ? 'Aucun nouvel épisode à regarder pour le moment.' : 'Commencez une série depuis votre bibliothèque pour la retrouver ici.' });
 
-  const freshHTML = rel.fresh.length ? `<section class="section"><div class="section-head"><h2 class="section-title">Nouveaux épisodes disponibles</h2><a class="section-link" href="#/calendar">Tout voir ${icon('chevron', 'sm')}</a></div>
-    <div class="rel-list">${rel.fresh.slice(0, 4).map(relItem).join('')}</div></section>` : '';
-
-  const upcomingHTML = `<section class="section"><div class="section-head"><h2 class="section-title">Prochaines sorties</h2><a class="section-link" href="#/calendar">Calendrier ${icon('chevron', 'sm')}</a></div>
-    ${rel.upcoming.length ? `<div class="rel-list">${rel.upcoming.slice(0, 5).map(relItem).join('')}</div>` : emptyHTML({ sm: true, ic: 'calendar', title: 'Aucune sortie datée à venir', text: rel.tba.length ? `${plural(rel.tba.length, 'série attend', 'séries attendent')} une date de sortie.` : 'Les prochains épisodes de vos séries apparaîtront ici.' })}</section>`;
+  const upcomingHTML = `<section class="section"><div class="section-head"><h2 class="section-title">Bientôt</h2><a class="section-link" href="#/calendar">Tout le calendrier ${icon('chevron', 'sm')}</a></div>
+    ${rel.upcoming.length ? `<div class="rel-list">${rel.upcoming.slice(0, 4).map(relItem).join('')}</div>` : `<p class="muted">Aucune sortie datée pour vos séries.${rel.tba.length ? ` ${plural(rel.tba.length, 'série attend', 'séries attendent')} une date.` : ''}</p>`}</section>`;
 
   const planned = all.filter(x => x.s.status === 'planned').slice(0, 12);
-  const plannedHTML = planned.length ? `<section class="section"><div class="section-head"><h2 class="section-title">À commencer</h2><a class="section-link" href="#/library" data-act="lib-goto" data-cat="planned">Voir tout ${icon('chevron', 'sm')}</a></div>
+  const plannedHTML = planned.length ? `<section class="section"><div class="section-head"><h2 class="section-title">À commencer</h2><a class="section-link" href="#/library" data-act="lib-goto" data-cat="planned">Tout voir ${icon('chevron', 'sm')}</a></div>
     <div class="grid">${planned.map(({ s, st }) => cardHTML(s, st, false)).join('')}</div></section>` : '';
 
-  return head + statsHTML + `<section class="section"><div class="section-head"><h2 class="section-title">Reprendre</h2></div>${resumeHTML}</section>` + freshHTML + upcomingHTML + plannedHTML;
+  return head + `<section class="section first"><div class="section-head"><h2 class="section-title">À regarder maintenant</h2></div>${resumeHTML}</section>` + upcomingHTML + plannedHTML;
 }
-function resumeCard(s, st) {
-  const bg = imgUrl(s.backdrop, 'w780') || imgUrl(s.poster, 'w500');
+function upRow(s, st) {
   const e = st.next;
-  return `<article class="resume" data-card="${s.id}">
-    ${bg ? `<div class="resume-bg" style="background-image:url('${esc(bg)}')"></div>` : `<div class="resume-bg" style="background:linear-gradient(140deg,hsl(${hueOf(s.title)} 50% 30%),hsl(${hueOf(s.title) + 40} 45% 12%))"></div>`}
-    <a class="link-cover" href="#/show/${s.id}" aria-label="Ouvrir ${esc(s.title)}"></a>
-    <div class="resume-title">${esc(s.title)}</div>
-    <div class="resume-ep"><b>${epCode(e)}</b>${e.title ? ` <span class="muted">· ${esc(e.title)}</span>` : ''}</div>
-    <div class="resume-foot">${bar(st.pct)}<span class="muted" style="font-size:13px">${st.pct} %</span>
-      <button class="check-btn" data-act="next-watch" data-show="${s.id}">${icon('check', 'sm')}Vu</button></div>
-  </article>`;
+  const pf = showPlatforms(s)[0];
+  return `<li class="up-row" data-card="${s.id}">
+    <a class="up-link" href="#/show/${s.id}">
+      ${posterHTML(s, 'w154')}
+      <span class="up-text">
+        <span class="up-title">${esc(s.title)}</span>
+        <span class="up-ep">${epCode(e)}${e.title ? ` – ${esc(e.title)}` : ''}</span>
+        <span class="up-meta">${bar(st.pct)}<span>${st.available > 1 ? `${st.available} à voir` : 'Dernier dispo'}</span>${pf ? pfBadge(pf.p) : ''}</span>
+      </span>
+    </a>
+    <button class="big-check" data-act="next-watch" data-show="${s.id}" aria-label="Marquer ${epCode(e)} de ${esc(s.title)} comme vu">${icon('check')}<span>Vu</span></button>
+  </li>`;
 }
 function relItem({ show, e, r, timed }) {
   const cd = countdown(r, timed);
@@ -459,7 +455,7 @@ function relItem({ show, e, r, timed }) {
   return `<article class="rel ${available ? 'available' : ''}">
     <a href="#/show/${show.id}" aria-label="${esc(show.title)}">${posterHTML(show, 'w154')}</a>
     <div style="min-width:0"><a href="#/show/${show.id}" class="rel-show">${esc(show.title)}</a>
-      <div class="rel-ep"><b>${epCode(e)}</b>${e.title ? ` · ${esc(e.title)}` : ''}</div>
+      <div class="rel-ep"><b>${epCode(e)}</b>${e.title ? ` – ${esc(e.title)}` : ''}</div>
       <div class="rel-meta">${icon('clock', 'sm')}<span>${esc(when)}</span>${pfs.map(x => pfBadge(x.p)).join('')}${pfs.length ? `<span>${esc(pfs.map(x => x.p.name).join(', '))}</span>` : ''}</div></div>
     <div class="rel-side"><span class="countdown ${cd.cls}" data-release="${r.getTime()}" data-timed="${timed ? 1 : 0}">${esc(cd.text)}</span>
       ${available ? `<button class="btn sm ok" data-act="ep-toggle" data-show="${show.id}" data-key="${epKey(e)}">${icon('check', 'sm')}Marquer vu</button>` : ''}</div>
@@ -561,13 +557,13 @@ function viewCalendar() {
     if (!g || g.k !== k) { g = { k, d: startOfDay(it.r), items: [] }; groups.push(g); }
     g.items.push(it);
   }
-  const groupsHTML = groups.map(g => `<section class="day-group"><div class="day-head"><h3>${esc(relDayLabel(g.d) || fmtDate(g.d, 'long'))}</h3>${relDayLabel(g.d) ? `<span class="muted">${esc(fmtDate(g.d, 'long'))}</span>` : ''}<span class="muted">· ${plural(g.items.length, 'épisode', 'épisodes')}</span></div>
+  const groupsHTML = groups.map(g => `<section class="day-group"><div class="day-head"><h3>${esc(relDayLabel(g.d) || fmtDate(g.d, 'long'))}</h3>${relDayLabel(g.d) ? `<span class="muted">${esc(fmtDate(g.d, 'long'))}</span>` : ''}<span class="muted">${plural(g.items.length, 'épisode', 'épisodes')}</span></div>
     <div class="rel-list">${g.items.map(relItem).join('')}</div></section>`).join('');
 
-  const freshHTML = fresh.length ? `<section class="day-group"><div class="day-head"><h3>Disponibles maintenant</h3><span class="muted">· sortis récemment, pas encore vus</span></div>
+  const freshHTML = fresh.length ? `<section class="day-group"><div class="day-head"><h3>Disponibles maintenant</h3><span class="muted">Sortis récemment, pas encore vus</span></div>
     <div class="rel-list">${fresh.map(relItem).join('')}</div></section>` : '';
 
-  const tbaHTML = (ui.cal.range === 'all' && tba.length) ? `<section class="day-group"><div class="day-head"><h3>Date à confirmer</h3><span class="muted">· annoncés sans date de sortie</span></div>
+  const tbaHTML = (ui.cal.range === 'all' && tba.length) ? `<section class="day-group"><div class="day-head"><h3>Date à confirmer</h3><span class="muted">Annoncés sans date de sortie</span></div>
     <div class="rel-list">${tba.map(({ show, e, more }) => `<article class="rel"><a href="#/show/${show.id}">${posterHTML(show, 'w154')}</a>
       <div style="min-width:0"><a href="#/show/${show.id}" class="rel-show">${esc(show.title)}</a><div class="rel-ep"><b>${epCode(e)}</b>${e.title ? ` · ${esc(e.title)}` : ''}${more ? ` <span class="muted">et ${plural(more, 'autre épisode', 'autres épisodes')}</span>` : ''}</div>
       <div class="rel-meta">${showPlatforms(show).map(x => pfBadge(x.p)).join('')}</div></div>
@@ -575,13 +571,13 @@ function viewCalendar() {
 
   const emptyText = { today: "Aucun épisode ne sort aujourd'hui.", week: 'Aucun épisode ne sort dans les 7 prochains jours.', month: 'Aucun épisode ne sort dans les 30 prochains jours.', all: 'Aucune sortie datée à venir pour vos séries.' }[ui.cal.range];
 
-  return `<header class="page-head"><div><h1 class="page-title">Calendrier</h1><p class="page-sub">Les prochains épisodes de vos séries, du plus proche au plus lointain.</p></div>
+  return `<header class="page-head"><div><h1 class="page-title">Calendrier</h1><p class="page-sub">Les prochains épisodes de vos séries.</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" data-act="ics-export" title="Exporter les sorties vers votre agenda (.ics)">${icon('download')}Exporter vers l'agenda</button>
+        <button class="btn sm ghost" data-act="ics-export" title="Exporter les sorties vers votre agenda (.ics)">${icon('download', 'sm')}Ajouter à mon agenda</button>
         ${notifButtonHTML()}
       </div></header>
     <div class="seg" role="tablist">${Object.entries(ranges).map(([k, v]) => `<button role="tab" class="${ui.cal.range === k ? 'on' : ''}" aria-selected="${ui.cal.range === k}" data-act="cal-range" data-range="${k}">${v.label} <span class="count">${count(k)}</span></button>`).join('')}</div>
-    <p class="filters-note" style="margin-top:10px">${{ today: "Sorties d'aujourd'hui", week: '7 prochains jours', month: '30 prochains jours', all: 'Toutes les sorties annoncées, y compris celles sans date' }[ui.cal.range]} · les épisodes vus et les dates passées sont masqués.</p>
+    <p class="filters-note">${{ today: "Sorties d'aujourd'hui.", week: 'Les 7 prochains jours.', month: 'Les 30 prochains jours.', all: 'Toutes les sorties annoncées, y compris sans date.' }[ui.cal.range]}</p>
     ${freshHTML}
     ${groupsHTML || `<div style="margin-top:20px">${emptyHTML({ sm: true, ic: 'calendar', title: 'Rien de prévu', text: emptyText + (tba.length && ui.cal.range !== 'all' ? ` ${plural(tba.length, 'série a', 'séries ont')} des épisodes en « Date à confirmer » (onglet Tout).` : '') })}</div>`}
     ${tbaHTML}`;
@@ -589,7 +585,7 @@ function viewCalendar() {
 function notifButtonHTML() {
   if (!('Notification' in window)) return '';
   const on = state.settings.notifications && Notification.permission === 'granted';
-  return `<button class="btn ${on ? 'ok' : ''}" data-act="notif-toggle">${icon('bell')}${on ? 'Rappels activés' : 'Activer les rappels'}</button>`;
+  return `<button class="btn sm ${on ? 'ok' : 'ghost'}" data-act="notif-toggle">${icon('bell', 'sm')}${on ? 'Rappels activés' : 'Activer les rappels'}</button>`;
 }
 
 /* ---------- Vue : Fiche série ---------- */
@@ -601,7 +597,6 @@ function viewShow(id) {
   if (!ui.openSeasons[show.id]) ui.openSeasons[show.id] = new Set([st.currentSeason]);
   const open = ui.openSeasons[show.id];
   const pfs = showPlatforms(show);
-  const bg = imgUrl(show.backdrop, 'w1280');
   const nSeasons = show.seasons.length, nEps = st.total;
   const meta = [
     show.year && `<span>${esc(show.year)}</span>`,
@@ -613,7 +608,6 @@ function viewShow(id) {
   const stars = [1, 2, 3, 4, 5].map(n => `<button class="star ${show.rating >= n ? 'on' : ''}" data-act="show-rating" data-show="${show.id}" data-n="${n}" aria-label="Noter ${n} sur 5" aria-pressed="${show.rating >= n}">${icon('star', 'fill')}</button>`).join('');
 
   const hero = `<section class="detail-hero">
-    ${bg ? `<div class="detail-bg" style="background-image:url('${esc(bg)}')"></div>` : ''}
     ${posterHTML(show, 'w500')}
     <div class="detail-info">
       <div class="detail-head" style="display:flex;flex-direction:column;gap:12px">
@@ -641,13 +635,13 @@ function viewShow(id) {
   let nextBlock;
   if (st.next) {
     nextBlock = `<div class="next-card"><span class="eyebrow">Prochain épisode à regarder</span>
-      <div><div class="next-ep">${epCode(st.next)}${st.next.title ? ` · ${esc(st.next.title)}` : ''}</div>
+      <div><div class="next-ep">${epCode(st.next)}${st.next.title ? ` – ${esc(st.next.title)}` : ''}</div>
       <div class="muted" style="font-size:13px">${st.next.airDate ? 'Sorti le ' + esc(FMT.full.format(parseDay(st.next.airDate))) : ''}${st.next.runtime ? ' · ' + fmtRuntime(st.next.runtime) : ''}</div></div>
       <button class="btn primary sm" data-act="ep-toggle" data-show="${show.id}" data-key="${epKey(st.next)}">${icon('check', 'sm')}Marquer comme vu</button></div>`;
   } else if (st.nextUp) {
     const r = epRelease(show, st.nextUp);
-    nextBlock = `<div class="next-card calm"><span class="eyebrow">${st.watched ? 'À jour · prochain épisode' : 'Prochain épisode'}</span>
-      <div class="next-ep">${epCode(st.nextUp)}${st.nextUp.title ? ` · ${esc(st.nextUp.title)}` : ''}</div>
+    nextBlock = `<div class="next-card calm"><span class="eyebrow">${st.watched ? 'À jour, prochain épisode' : 'Prochain épisode'}</span>
+      <div class="next-ep">${epCode(st.nextUp)}${st.nextUp.title ? ` – ${esc(st.nextUp.title)}` : ''}</div>
       <div class="muted" style="font-size:13px">${r ? esc(fmtDate(r, 'long')) + (isTimed(show, st.nextUp) ? ' à ' + FMT.time.format(r) : '') + ' · ' + esc(countdown(r, isTimed(show, st.nextUp)).text) : 'Date à confirmer'}</div></div>`;
   } else if (done) {
     nextBlock = `<div class="next-card calm"><span class="eyebrow">Terminé</span><div>Vous avez vu tous les épisodes référencés.${show.airStatus === 'airing' ? ' De nouveaux épisodes apparaîtront dès leur annonce.' : ''}</div>
@@ -657,7 +651,7 @@ function viewShow(id) {
   const side = `<aside class="detail-side">
     <div class="panel"><div class="panel-title">Ma progression</div>
       <div class="progress-top">
-        <div class="ring ${done ? 'done' : ''}"><svg viewBox="0 0 100 100"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs>
+        <div class="ring ${done ? 'done' : ''}"><svg viewBox="0 0 100 100">
           <circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - st.pct / 100)}"/></svg>
           <div class="ring-label">${st.pct}%</div></div>
         <div><div style="font:700 18px/1.2 var(--display)">${st.watched} / ${st.total}</div><div class="muted" style="font-size:13.5px">épisodes regardés</div>
@@ -703,7 +697,7 @@ function seasonHTML(show, se, states, isOpen) {
     const dateTxt = r ? (relDayLabel(r) || fmtDate(r)) + (isTimed(show, e) ? ' · ' + FMT.time.format(r) : '') : 'Date à confirmer';
     return `<li class="ep is-${s}" data-ep="${epKey(e)}">
       <button class="chk" data-act="ep-toggle" data-show="${show.id}" data-key="${epKey(e)}" aria-pressed="${e.watched}" ${s === 'upcoming' ? 'disabled title="Pas encore sorti"' : ''} aria-label="${e.watched ? 'Décocher' : 'Marquer comme vu'} ${epCode(e)}">${icon('check')}</button>
-      <div style="min-width:0"><div class="ep-top"><span class="ep-code">E${pad(e.number)}</span><span class="ep-title ${e.title ? '' : 'none'}">${esc(e.title || 'Titre non communiqué')}</span></div>
+      <div style="min-width:0"><div class="ep-top"><span class="ep-code">${e.number}</span><span class="ep-title ${e.title ? '' : 'none'}">${esc(e.title || 'Titre non communiqué')}</span></div>
         <div class="ep-meta"><span>${esc(dateTxt)}</span>${e.runtime ? `<span>${fmtRuntime(e.runtime)}</span>` : ''}${stateChip(s, show, e)}</div></div>
       <div class="ep-actions">
         <button class="icon-btn sm" data-act="ep-prev" data-show="${show.id}" data-key="${epKey(e)}" title="Marquer cet épisode et tous les précédents comme vus" aria-label="Marquer cet épisode et tous les précédents comme vus">${icon('listcheck')}</button>
@@ -1418,7 +1412,7 @@ const mq = window.matchMedia('(prefers-color-scheme: light)');
 function applyTheme() {
   const t = state.settings.theme === 'system' ? (mq.matches ? 'light' : 'dark') : state.settings.theme;
   document.documentElement.dataset.theme = t;
-  $('meta[name=theme-color]').content = t === 'light' ? '#f5f3ef' : '#0a0b10';
+  $('meta[name=theme-color]').content = t === 'light' ? '#f6f6f9' : '#15141d';
 }
 mq.addEventListener?.('change', () => { if (state.settings.theme === 'system') { applyTheme(); renderNav(); } });
 
