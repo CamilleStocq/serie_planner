@@ -2,31 +2,38 @@
 
 Application web sans installation ni dépendance : HTML, CSS et JavaScript.
 
-## Lancer
+En ligne : https://camillestocq.github.io/serie_planner/
+
+## Lancer en local
 
 ```bash
 node serve.js
 ```
 
-Puis ouvrez http://localhost:5173. Ouvrir `index.html` directement marche aussi, mais les notifications ont besoin de `localhost`.
+Puis ouvrez http://localhost:5173.
 
-## Connecter TMDB (recommandé)
+## Catalogue de séries
 
-1. Créez un compte gratuit sur themoviedb.org.
-2. Dans Paramètres › API, copiez la **clé d'API (v3)** ou le **jeton d'accès en lecture (v4)**.
-3. Dans Saison, allez dans **Réglages › Connexion TMDB**, collez la clé, puis cliquez sur **Tester et enregistrer**.
+Aucune clé ni compte n'est nécessaire.
 
-Sans clé, l'ajout manuel fonctionne quand même.
+- **TVmaze** fournit les séries du monde entier : affiches, images, saisons, épisodes, dates et heures de diffusion (converties dans votre fuseau), chaîne ou plateforme d'origine.
+- **Wikidata** permet de chercher par titre français (« La Servante écarlate », « Les Simpson »…) et retrouve la bonne fiche.
+
+Les résumés fournis par TVmaze sont souvent en anglais ; ils sont modifiables sur chaque fiche. Les séries en diffusion sont mises à jour automatiquement toutes les 12 h.
+
+Une série absente du catalogue peut être ajoutée manuellement.
 
 ## Données
 
 - Tout est enregistré dans le navigateur (localStorage), sur cet appareil uniquement.
 - Réglages › Données : export et import JSON pour sauvegarder ou changer de navigateur.
-- Réglages › Agenda : export `.ics` des prochaines sorties, avec rappels, pour Google Agenda, Outlook ou Apple Calendrier.
+- Réglages › Agenda : export `.ics` des prochaines sorties, avec rappels.
 
 ## Fichiers
 
 - `index.html` : structure
 - `styles.css` : design (thèmes sombre et clair)
-- `app.js` : logique (état, TMDB, épisodes, calendrier, rappels)
+- `app.js` : logique (état, catalogue, épisodes, calendrier, rappels)
 - `serve.js` : petit serveur local
+
+Données des séries : TVmaze (CC BY-SA) et Wikidata (CC0).

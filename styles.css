@@ -493,7 +493,7 @@ h1, h2, h3 { font-family: var(--display); letter-spacing: -.02em; margin: 0; }
 .detail-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, var(--surface) 8%, color-mix(in srgb, var(--surface) 88%, transparent) 45%, color-mix(in srgb, var(--surface) 55%, transparent)), linear-gradient(0deg, var(--surface), transparent 60%); }
 .detail-hero .poster { box-shadow: var(--shadow); border-radius: 16px; }
 .detail-info { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.detail-title { font-size: clamp(30px, 4.6vw, 52px); font-weight: 800; line-height: 1; }
+.detail-title { font-size: clamp(30px, 4.6vw, 52px); font-weight: 800; line-height: 1; overflow-wrap: anywhere; hyphens: auto; }
 .detail-orig { color: var(--muted); font-size: 14px; margin-top: -6px; }
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--text-2); font-size: 14px; align-items: center; }
 .meta-line .sep { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
