@@ -6,7 +6,7 @@
 'use strict';
 
 // Version de l'app : à changer à chaque publication (node scripts/bump.js le fait)
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 
 /* ---------- Constantes ---------- */
 const STORE_KEY = 'saison:data:v1';
@@ -2153,11 +2153,6 @@ function dailyPicks() {
   }
   return list;
 }
-function nextSelectionIn() {
-  const now = new Date();
-  const mins = Math.max(1, Math.round((startOfDay(now).getTime() + DAY - now) / 6e4));
-  return mins >= 60 ? `${Math.floor(mins / 60)} h` : `${mins} min`;
-}
 
 function recsSectionHTML(limit = 12) {
   if (!catalogCache) { loadCatalog().then(() => safeRender()); return ''; }
@@ -2171,7 +2166,6 @@ function viewDiscover() {
   const p = state.profile || {};
   const recs = dailyPicks();
   return `<header class="page-head"><div><h1 class="page-title">Découvrir</h1><p class="page-sub">${p.done && !p.skipped ? `${esc(personaOf(p))} · choisies selon vos goûts et votre bibliothèque.` : 'Des séries populaires. Répondez au questionnaire pour des suggestions sur mesure.'}</p></div></header>
-    <div class="daily-banner"><span class="daily-icon" aria-hidden="true">${icon('sparkle')}</span><div><b>Sélection du jour</b><span>Nouvelle sélection dans <span id="dailyIn">${nextSelectionIn()}</span></span></div></div>
     ${!p.done || p.skipped ? `<div class="notice" style="margin:12px 0 18px">${icon('sparkle')}<div><p>Dites-nous ce que vous aimez en 1 minute pour des recommandations personnalisées.</p><div class="actions"><button class="btn sm primary" data-act="ob-start">Répondre au questionnaire</button></div></div></div>` : ''}
     ${recs.length ? `<div class="rgrid">${recs.map(recCard).join('')}</div>` : emptyHTML({ ic: 'sparkle', title: 'Vous avez tout vu !', text: 'Plus aucune suggestion pour le moment. Revenez après avoir ajouté quelques séries.' })}
     <p class="help" style="margin-top:20px">Touchez une affiche pour voir le résumé. ✕ pour l'écarter, + pour l'ajouter à « À regarder ».</p>`;
@@ -2523,7 +2517,6 @@ setTimeout(() => checkForUpdate(), 3000);
 ACTIONS['check-update'] = () => checkForUpdate({ manual: true });
 let shownDay = todayKey();
 setInterval(() => {
-  const el = $('#dailyIn'); if (el) el.textContent = nextSelectionIn();
   if (todayKey() !== shownDay) { shownDay = todayKey(); if (['home', 'discover'].includes(ui.route.name)) safeRender(); }
 }, 60e3);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayKey() !== shownDay) { shownDay = todayKey(); safeRender(); } });

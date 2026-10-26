@@ -1110,9 +1110,3 @@ body.fullscreen .view { max-width: none; padding: 0; }
 .no-chip.off { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
 .version-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-/* Sélection du jour */
-.daily-banner { display: flex; align-items: center; gap: 14px; margin: 16px 0 20px; padding: 14px 16px; border-radius: 18px; background: var(--pop-soft); }
-.daily-icon { width: 44px; height: 44px; flex: none; border-radius: 14px; display: grid; place-items: center; background: var(--pop); color: #1e1c2c; }
-.daily-banner b { display: block; font-size: 17px; }
-.daily-banner span { font-size: 14px; color: var(--ink-2); }
-.daily-banner #dailyIn { font-weight: 700; color: var(--ink); }
