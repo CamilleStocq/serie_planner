@@ -1615,6 +1615,9 @@ function tastePanelHTML() {
   const chips = (p.genres || []).map(g => `<span class="chip">${esc((TASTE_GENRES.find(t => t[0] === g) || [, ''])[1])} ${esc(genreFr(g))}</span>`).join('');
   return `<section class="panel"><div class="panel-title">Mes goûts</div>
     ${p.done && !p.skipped ? `<div class="taste"><span class="ob-badge sm">${esc(personaOf(p))}</span><div class="taste-chips">${chips}</div></div>` : '<p class="help" style="font-size:15px">Répondez à quelques questions pour recevoir des recommandations sur mesure.</p>'}
+    <p class="label" style="margin:18px 0 8px">Ne jamais me proposer</p>
+    <div class="no-chips">${TASTE_GENRES.map(([g, e]) => `<button class="no-chip ${(p.dislikes || []).includes(g) ? 'off' : ''}" data-act="taste-dislike" data-v="${esc(g)}" aria-pressed="${(p.dislikes || []).includes(g)}">${e} ${esc(genreFr(g))}</button>`).join('')}</div>
+    <p class="help" style="margin-top:8px">Touchez un genre pour qu'il n'apparaisse plus dans Découvrir.</p>
     <div style="margin-top:14px"><button class="btn" data-act="ob-start">${icon('sparkle')}${p.done && !p.skipped ? 'Refaire le questionnaire' : 'Répondre au questionnaire'}</button></div></section>`;
 }
 
@@ -2016,6 +2019,7 @@ function recommend(limit = 24) {
   const myPlatforms = state.platforms.filter(pl => (p.platforms || []).includes(pl.id));
   const owned = new Set(state.shows.map(s => s.tvmazeId).filter(Boolean));
   const dismissed = new Set(state.dismissed || []);
+  const banned = new Set(p.dislikes || []);
   const favs = p.favs || [];
   favs.forEach(f => owned.add(f.id));
 
@@ -2034,6 +2038,7 @@ function recommend(limit = 24) {
   const out = [];
   for (const c of cat) {
     if (owned.has(c.id) || dismissed.has(c.id)) continue;
+    if (c.g.some(g => banned.has(g)) || (c.an && banned.has('Anime'))) continue;
     const gs = c.an && !c.g.includes('Anime') ? [...c.g, 'Anime'] : c.g;
     let score = 0;
     const reasons = [];
@@ -2137,20 +2142,20 @@ async function quickAdd(id, status = 'planned', frTitle = '') {
 }
 
 /* ---------- Questionnaire de la première ouverture ---------- */
-const OB_STEPS = ['hello', 'genres', 'mood', 'format', 'langs', 'platforms', 'favs', 'done'];
+const OB_STEPS = ['hello', 'genres', 'dislikes', 'mood', 'format', 'langs', 'platforms', 'favs', 'done'];
 const OB_DRAFT_KEY = 'saison:onboarding';
 function saveObDraft() {
   if (!ui.ob) return;
   const d = ui.ob.d;
   try {
-    localStorage.setItem(OB_DRAFT_KEY, JSON.stringify({ step: ui.ob.step, d: { ...d, genres: [...d.genres], langs: [...d.langs], platforms: [...d.platforms] } }));
+    localStorage.setItem(OB_DRAFT_KEY, JSON.stringify({ step: ui.ob.step, d: { ...d, genres: [...d.genres], dislikes: [...d.dislikes], langs: [...d.langs], platforms: [...d.platforms] } }));
   } catch { /* stockage indisponible */ }
 }
 function readObDraft() {
   try {
     const x = JSON.parse(localStorage.getItem(OB_DRAFT_KEY) || 'null');
     if (!x || !x.d) return null;
-    return { step: x.step || 0, q: '', results: [], searching: false, d: { ...x.d, genres: new Set(x.d.genres), langs: new Set(x.d.langs), platforms: new Set(x.d.platforms) } };
+    return { step: x.step || 0, q: '', results: [], searching: false, d: { ...x.d, genres: new Set(x.d.genres), dislikes: new Set(x.d.dislikes || []), langs: new Set(x.d.langs), platforms: new Set(x.d.platforms) } };
   } catch { return null; }
 }
 const clearObDraft = () => { try { localStorage.removeItem(OB_DRAFT_KEY); } catch { /* */ } };
@@ -2165,7 +2170,7 @@ function initOnboarding(resume = false) {
     step: 0, q: '', results: [], searching: false,
     d: {
       name: p.name || account?.name?.split(' ')[0] || '',
-      genres: new Set(p.genres || []), mood: p.mood || '', format: p.format || 'any', length: p.length || 'any',
+      genres: new Set(p.genres || []), dislikes: new Set(p.dislikes || []), mood: p.mood || '', format: p.format || 'any', length: p.length || 'any',
       langs: new Set(p.langs || []), platforms: new Set(p.platforms || state.shows.flatMap(s => s.platforms.map(x => x.pid))),
       favs: [...(p.favs || [])], addFavs: false,
     },
@@ -2192,6 +2197,10 @@ function viewOnboarding() {
     body = `<h1 class="ob-title">Vous aimez quels genres ?</h1><p class="ob-sub">Choisissez-en autant que vous voulez.</p>
       <div class="ob-grid">${TASTE_GENRES.map(([g, e]) => tile('ob-genre', g, d.genres.has(g), e, genreFr(g))).join('')}</div>`;
     canNext = d.genres.size > 0;
+  } else if (step === 'dislikes') {
+    const options = TASTE_GENRES.filter(([g]) => !d.genres.has(g));
+    body = `<h1 class="ob-title">Et ce que vous n'aimez pas ?</h1><p class="ob-sub">Ces genres ne vous seront jamais proposés. Facultatif.</p>
+      <div class="ob-grid">${options.map(([g, e]) => `<button class="ob-tile no-tile ${d.dislikes.has(g) ? 'off' : ''}" data-act="ob-dislike" data-v="${esc(g)}" aria-pressed="${d.dislikes.has(g)}"><span class="ob-emoji" aria-hidden="true">${e}</span><b>${esc(genreFr(g))}</b></button>`).join('')}</div>`;
   } else if (step === 'mood') {
     body = `<h1 class="ob-title">Le soir, vous avez plutôt envie de…</h1>
       <div class="ob-list">${MOODS.map(([v, e, l, s]) => tile('ob-mood', v, d.mood === v, e, l, s)).join('')}</div>`;
@@ -2211,7 +2220,7 @@ function viewOnboarding() {
     body = `<h1 class="ob-title">Vous avez quelles plateformes ?</h1><p class="ob-sub">Pour vous proposer d'abord ce que vous pouvez regarder.</p>
       <div class="ob-grid pf-grid">${all.map(p => `<button class="ob-tile pf-tile ${d.platforms.has(p.id) ? 'on' : ''}" data-act="ob-pf" data-v="${esc(p.id)}" aria-pressed="${d.platforms.has(p.id)}">${pfBadge(p, 'xl')}<b>${esc(p.name)}</b></button>`).join('')}</div>`;
   } else if (step === 'favs') {
-    const picks = (catalogCache || []).filter(c => !d.favs.some(f => f.id === c.id) && (!d.genres.size || c.g.some(g => d.genres.has(g)))).slice(0, 18);
+    const picks = (catalogCache || []).filter(c => !d.favs.some(f => f.id === c.id) && !c.g.some(g => d.dislikes.has(g)) && (!d.genres.size || c.g.some(g => d.genres.has(g)))).slice(0, 18);
     body = `<h1 class="ob-title">Vos coups de cœur ?</h1><p class="ob-sub">Touchez les séries que vous avez adorées (jusqu'à 8). Elles guideront nos suggestions.</p>
       ${d.favs.length ? `<div class="ob-favs">${d.favs.map(f => `<button class="ob-fav" data-act="ob-unfav" data-v="${f.id}" aria-label="Retirer ${esc(f.n)}">${posterHTML({ title: f.n, poster: f.img })}<span class="ob-fav-x">${icon('x', 'sm')}</span></button>`).join('')}</div>` : ''}
       <div class="search-box ob-search">${icon('search')}<label class="visually-hidden" for="obSearch">Rechercher une série</label><input id="obSearch" class="input" type="search" placeholder="Rechercher une série…" value="${esc(o.q)}" data-input="ob-q" autocomplete="off"></div>
@@ -2224,7 +2233,7 @@ function viewOnboarding() {
     state.profile = saved;
     body = `<div class="ob-result"><span class="ob-badge">${esc(personaOf(prof))}</span>
       <h1 class="ob-title">C'est noté${d.name ? ', ' + esc(d.name) : ''} !</h1>
-      <div class="ob-summary">${[...d.genres].map(g => `<span class="chip">${(TASTE_GENRES.find(t => t[0] === g) || [, ''])[1]} ${esc(genreFr(g))}</span>`).join('')}${d.mood ? `<span class="chip accent">${MOODS.find(m => m[0] === d.mood)[1]} ${esc(MOODS.find(m => m[0] === d.mood)[2])}</span>` : ''}</div>
+      <div class="ob-summary">${[...d.genres].map(g => `<span class="chip">${(TASTE_GENRES.find(t => t[0] === g) || [, ''])[1]} ${esc(genreFr(g))}</span>`).join('')}${d.mood ? `<span class="chip accent">${MOODS.find(m => m[0] === d.mood)[1]} ${esc(MOODS.find(m => m[0] === d.mood)[2])}</span>` : ''}${[...d.dislikes].map(g => `<span class="chip no">🚫 ${esc(genreFr(g))}</span>`).join('')}</div>
       <p class="ob-sub">Voici de quoi commencer :</p>
       <div class="ob-recs">${recs.map(r => `<div class="ob-rec">${posterHTML({ title: r.c.n, poster: CATALOG_IMG + r.c.i })}<b>${esc(r.c.n)}</b><small>${esc(r.reason)}</small></div>`).join('')}</div></div>`;
   }
@@ -2251,7 +2260,7 @@ function obPicksHTML(list) {
 function obProfile() {
   const d = ui.ob.d;
   return {
-    name: d.name.trim(), genres: [...d.genres], mood: d.mood, format: d.format, length: d.length,
+    name: d.name.trim(), genres: [...d.genres], dislikes: [...d.dislikes], mood: d.mood, format: d.format, length: d.length,
     langs: [...d.langs], platforms: [...d.platforms].filter(id => !id.startsWith('sugg:')), favs: d.favs, done: true, at: Date.now(),
   };
 }
@@ -2325,7 +2334,15 @@ Object.assign(ACTIONS, {
   'ob-back': () => { ui.ob.step = Math.max(0, ui.ob.step - 1); render(); },
   'ob-skip': () => { if (state.profile?.done) { ui.ob = null; clearObDraft(); location.hash = '#/settings'; render(); } else finishOnboarding(true); },
   'ob-finish': () => finishOnboarding(false),
-  'ob-genre': el => { const s = ui.ob.d.genres, v = el.dataset.v; s.has(v) ? s.delete(v) : s.add(v); render(); },
+  'ob-genre': el => { const s = ui.ob.d.genres, v = el.dataset.v; s.has(v) ? s.delete(v) : (s.add(v), ui.ob.d.dislikes.delete(v)); render(); },
+  'ob-dislike': el => { const s = ui.ob.d.dislikes, v = el.dataset.v; s.has(v) ? s.delete(v) : s.add(v); render(); },
+  'taste-dislike': el => {
+    const p = state.profile || (state.profile = {});
+    const set = new Set(p.dislikes || []), v = el.dataset.v;
+    if (set.has(v)) set.delete(v); else { set.add(v); p.genres = (p.genres || []).filter(g => g !== v); }
+    p.dislikes = [...set];
+    save(); render();
+  },
   'ob-mood': el => { ui.ob.d.mood = el.dataset.v; render(); },
   'ob-format': el => { ui.ob.d.format = el.dataset.v; render(); },
   'ob-length': el => { ui.ob.d.length = el.dataset.v; render(); },

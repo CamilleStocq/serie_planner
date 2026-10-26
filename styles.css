@@ -1088,3 +1088,23 @@ body.fullscreen .view { max-width: none; padding: 0; }
   [data-theme="dark"] .time-side { border-top-color: var(--line); }
   .time-chart { height: 48px; }
 }
+
+/* =========================================================
+   Genres qu'on n'aime pas
+   ========================================================= */
+.ob-tile.no-tile.off { border-color: var(--danger); background: var(--danger-soft); }
+.ob-tile.no-tile.off .ob-emoji { filter: grayscale(1); opacity: .45; }
+.ob-tile.no-tile.off b { text-decoration: line-through; color: var(--danger); }
+.ob-tile.no-tile.off::after {
+  content: ""; position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--danger) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M7 7l10 10M17 7 7 17'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+.chip.no { background: var(--danger-soft); color: var(--danger); }
+.ob-summary .chip.no { box-shadow: none; }
+.no-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.no-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 99px;
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); font-size: 14px; font-weight: 600;
+  transition: background var(--fast), border-color var(--fast), color var(--fast);
+}
+.no-chip.off { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
