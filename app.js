@@ -71,6 +71,8 @@ const ICONS = {
   globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5z"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.8v.2"/>',
   sparkle: '<path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z"/>',
+  grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M14.5 8.5l2 2"/>',
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -205,6 +207,7 @@ const ui = {
   lib: { cat: 'all', q: '', platform: '', genre: '', air: '', sort: 'recent' },
   cal: { range: 'week' },
   openSeasons: {},
+  epView: 'grid',
   expandOverview: false,
   add: null,
   draft: null,
@@ -316,6 +319,10 @@ function pfBadge(p, cls = '') {
 }
 function showPlatforms(show) { return show.platforms.map(x => ({ ...x, p: getPlatform(x.pid) })).filter(x => x.p); }
 function catChip(id) { const c = CAT[id]; return `<span class="chip" style="color:${c.color};background:color-mix(in srgb, ${c.color} 16%, transparent)"><span class="dot"></span>${c.label}</span>`; }
+function ringBadge(pct, done, cls = '') {
+  const C = 2 * Math.PI * 15;
+  return `<span class="ring-badge ${done ? 'done' : ''} ${cls}" role="img" aria-label="${pct} % vu"><svg viewBox="0 0 36 36"><circle class="t" cx="18" cy="18" r="15"/><circle class="v" cx="18" cy="18" r="15" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct / 100)}"/></svg><b>${done ? icon('check', 'sm') : pct}</b></span>`;
+}
 function bar(pct, done) { return `<div class="bar ${done ? 'ok' : ''}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>`; }
 const soonLabel = t => (/^dans /.test(t) ? 'Sort ' + t : t === 'Demain' ? 'Sort demain' : t);
 function stateChip(st, show, e) {
@@ -421,7 +428,7 @@ function viewHome() {
     .filter(x => ['watching', 'paused'].includes(x.s.status) && x.st.next)
     .sort((a, b) => (b.s.lastWatchedAt || b.s.addedAt) - (a.s.lastWatchedAt || a.s.addedAt));
   const resumeHTML = resume.length
-    ? featureCard(resume[0].s, resume[0].st) + (resume.length > 1 ? `<ul class="up-list">${resume.slice(1).map(({ s, st }) => upRow(s, st)).join('')}</ul>` : '')
+    ? featureCard(resume[0].s, resume[0].st) + (resume.length > 1 ? `<div class="prail">${resume.slice(1).map(({ s, st }) => posterCard(s, st)).join('')}</div>` : '')
     : emptyHTML({ sm: true, ic: 'play', title: watching.length ? 'Vous êtes à jour' : 'Rien en cours', text: watching.length ? 'Aucun nouvel épisode à regarder pour le moment.' : 'Commencez une série depuis votre bibliothèque pour la retrouver ici.' });
 
   const upcomingHTML = `<section class="section"><div class="section-head"><h2 class="section-title">Bientôt</h2><a class="section-link" href="#/calendar">Tout le calendrier ${icon('chevron', 'sm')}</a></div>
@@ -489,6 +496,17 @@ function tvIllustration() {
     <rect x="152" y="108" width="16" height="6" rx="3" fill="var(--surface)"/>
   </svg>`;
 }
+function posterCard(s, st) {
+  const e = st.next;
+  const pf = showPlatforms(s)[0];
+  return `<article class="pcard" data-card="${s.id}">
+    <a class="pcard-link" href="#/show/${s.id}">${posterHTML(s, 'w342')}<span class="pcard-shade"></span>
+      <span class="pcard-info"><b>${esc(s.title)}</b><span>${epCode(e)}${st.available > 1 ? ` · +${st.available - 1}` : ''}</span></span></a>
+    ${ringBadge(st.pct, false, 'pcard-ring')}
+    ${pf ? `<span class="pcard-pf">${pfBadge(pf.p)}</span>` : ''}
+    <button class="pcard-check" data-act="next-watch" data-show="${s.id}" aria-label="Marquer ${epCode(e)} de ${esc(s.title)} comme vu">${icon('check')}</button>
+  </article>`;
+}
 function upRow(s, st) {
   const e = st.next;
   const pf = showPlatforms(s)[0];
@@ -528,7 +546,7 @@ function cardHTML(s, st, showCat) {
     <div style="position:relative">${posterHTML(s)}
       <div class="card-pfs">${pfs.map(x => pfBadge(x.p)).join('')}</div>
       ${showCat ? `<span class="chip card-cat">${CAT[s.status].label}</span>` : ''}
-      ${st.total ? `<div class="card-bar ${done ? 'done' : ''}"><span style="width:${st.pct}%"></span></div>` : ''}
+      ${st.total && st.watched ? ringBadge(st.pct, done, 'on-poster') : ''}
       ${st.next ? `<button class="card-quick" data-act="next-watch" data-show="${s.id}" title="Marquer ${epCode(st.next)} comme vu" aria-label="Marquer ${epCode(st.next)} de ${esc(s.title)} comme vu">${icon('check')}</button>` : ''}
     </div>
     <a class="card-link" href="#/show/${s.id}" aria-label="${esc(s.title)}"></a>
@@ -664,9 +682,9 @@ function viewShow(id) {
 
   const stars = [1, 2, 3, 4, 5].map(n => `<button class="star ${show.rating >= n ? 'on' : ''}" data-act="show-rating" data-show="${show.id}" data-n="${n}" aria-label="Noter ${n} sur 5" aria-pressed="${show.rating >= n}">${icon('star', 'fill')}</button>`).join('');
 
-  const wash = imgUrl(show.poster, 'w342');
+  const banner = imgUrl(show.backdrop, 'w1280') || imgUrl(show.poster, 'w780');
   const hero = `<section class="detail-hero">
-    ${wash ? `<div class="detail-wash" style="background-image:url('${esc(wash)}')" aria-hidden="true"></div>` : `<div class="detail-wash" style="background:hsl(${hueOf(show.title)} 60% 60%)" aria-hidden="true"></div>`}
+    <div class="detail-banner ${show.backdrop ? '' : 'from-poster'}" style="${banner ? `background-image:url('${esc(banner)}')` : `background:linear-gradient(135deg,hsl(${hueOf(show.title)} 50% 55%),hsl(${hueOf(show.title) + 60} 45% 30%))`}" aria-hidden="true"></div>
     ${posterHTML(show, 'w500')}
     <div class="detail-info">
       <div class="detail-head" style="display:flex;flex-direction:column;gap:12px">
@@ -737,21 +755,35 @@ function viewShow(id) {
     </div>
   </aside>`;
 
-  const seasonsHTML = show.seasons.length ? show.seasons.map(se => seasonHTML(show, se, st.states, open.has(se.number))).join('') :
+  const seasonsHTML = show.seasons.length ? show.seasons.map(se => seasonHTML(show, se, st.states, open.has(se.number), st.next ? epKey(st.next) : '')).join('') :
     emptyHTML({ sm: true, ic: 'listcheck', title: 'Aucun épisode', text: show.tvmazeId ? "Aucun épisode n'est encore annoncé pour cette série." : 'Ajoutez une saison pour suivre vos épisodes.' });
 
   return `<a class="back" href="#/library">${icon('back', 'sm')}Bibliothèque</a>${hero}
-    <div class="detail-grid"><div><div class="section-head" style="margin-bottom:12px"><h2 class="section-title">Saisons & épisodes</h2>
-      <button class="btn sm ghost" data-act="season-add" data-show="${show.id}">${icon('plus', 'sm')}Ajouter une saison</button></div>${seasonsHTML}</div>${side}</div>`;
+    <div class="detail-grid"><div><div class="section-head" style="margin-bottom:10px"><h2 class="section-title">Épisodes</h2>
+      <div class="view-toggle" role="group" aria-label="Affichage des épisodes">
+        <button class="${ui.epView === 'grid' ? 'on' : ''}" data-act="ep-view" data-view="grid" aria-pressed="${ui.epView === 'grid'}" title="Grille">${icon('grid', 'sm')}<span>Grille</span></button>
+        <button class="${ui.epView === 'list' ? 'on' : ''}" data-act="ep-view" data-view="list" aria-pressed="${ui.epView === 'list'}" title="Liste détaillée">${icon('list', 'sm')}<span>Liste</span></button>
+      </div></div>
+      ${show.seasons.length ? `<div class="ep-legend"><span class="lg watched">Vu</span><span class="lg available">À voir</span><span class="lg upcoming">Bientôt</span><span class="lg tba">Date inconnue</span></div>` : ''}
+      ${seasonsHTML}
+      <button class="btn sm ghost add-season" data-act="season-add" data-show="${show.id}">${icon('plus', 'sm')}Ajouter une saison</button></div>${side}</div>`;
 }
-function seasonHTML(show, se, states, isOpen) {
+function seasonHTML(show, se, states, isOpen, nextKey = '') {
   const eps = se.episodes;
   const w = eps.filter(e => e.watched).length;
   const markable = eps.filter(e => states.get(e) !== 'upcoming');
   const allDone = markable.length > 0 && markable.every(e => e.watched);
   const pct = eps.length ? Math.round((w / eps.length) * 100) : 0;
-  const now = new Date();
-  const epsHTML = isOpen ? `<ol class="eps">${eps.map(e => {
+  const tileDate = d => `${d.getDate()}/${d.getMonth() + 1}`;
+  const gridHTML = `<div class="ep-grid">${eps.map(e => {
+    const st = states.get(e);
+    const r = epRelease(show, e);
+    const when = r ? (relDayLabel(r) || fmtDate(r)) : 'Date à confirmer';
+    const label = `${epCode(e)}${e.title ? ' – ' + e.title : ''} (${st === 'watched' ? 'vu' : st === 'available' ? 'à voir' : st === 'upcoming' ? 'sort ' + when : 'date à confirmer'})`;
+    return `<button class="ep-tile is-${st} ${epKey(e) === nextKey ? 'next' : ''}" data-ep="${epKey(e)}" data-act="ep-toggle" data-show="${show.id}" data-key="${epKey(e)}" aria-pressed="${e.watched}" ${st === 'upcoming' ? 'disabled' : ''} title="${esc(label)}" aria-label="${esc(label)}">
+      <b>${e.number}</b>${st === 'watched' ? icon('check', 'sm') : st === 'upcoming' ? `<small>${tileDate(r)}</small>` : st === 'tba' ? '<small>?</small>' : ''}</button>`;
+  }).join('')}</div>`;
+  const epsHTML = !isOpen ? '' : ui.epView === 'grid' ? gridHTML + `<div class="season-foot"><button class="btn sm ghost" data-act="ep-add" data-show="${show.id}" data-season="${se.number}">${icon('plus', 'sm')}Ajouter un épisode</button></div>` : `<ol class="eps">${eps.map(e => {
     const s = states.get(e);
     const r = epRelease(show, e);
     const dateTxt = r ? (relDayLabel(r) || fmtDate(r)) + (isTimed(show, e) ? ' · ' + FMT.time.format(r) : '') : 'Date à confirmer';
@@ -765,12 +797,11 @@ function seasonHTML(show, se, states, isOpen) {
       </div></li>`;
   }).join('')}</ol>
     <div class="season-foot"><button class="btn sm ghost" data-act="ep-add" data-show="${show.id}" data-season="${se.number}">${icon('plus', 'sm')}Ajouter un épisode</button>
-    ${!show.tvmazeId ? `<button class="btn sm danger-ghost" data-act="season-delete" data-show="${show.id}" data-season="${se.number}">${icon('trash', 'sm')}Supprimer la saison</button>` : ''}</div>` : '';
-  void now;
+    ${!show.tvmazeId ? `<button class="btn sm danger-ghost" data-act="season-delete" data-show="${show.id}" data-season="${se.number}">${icon('trash', 'sm')}Supprimer la saison</button>` : ''}</div>`;
   return `<section class="season ${isOpen ? 'open' : ''}">
     <div class="season-head">
       <button class="season-toggle" data-act="season-open" data-show="${show.id}" data-season="${se.number}" aria-expanded="${isOpen}">
-        <span class="season-name">Saison ${se.number}</span><span class="season-count">${w}/${eps.length}</span>${bar(pct, pct === 100)}${icon('chevron', 'chev')}
+        ${ringBadge(pct, pct === 100 && eps.length > 0, 'season-ring')}<span class="season-name">Saison ${se.number}</span><span class="season-count">${w} / ${eps.length} vus</span>${icon('chevron', 'chev')}
       </button>
       ${markable.length ? `<button class="btn sm ${allDone ? 'ghost' : 'soft'}" data-act="season-toggle" data-show="${show.id}" data-season="${se.number}">${allDone ? 'Décocher la saison' : `${icon('check', 'sm')}Marquer la saison vue`}</button>` : ''}
     </div>${epsHTML}</section>`;
@@ -794,6 +825,8 @@ function afterWatch(show, snap, keys, msg) {
   save();
   render();
   for (const k of keys) {
+    const tile = $(`.ep-tile[data-ep="${k}"][aria-pressed="true"]`);
+    if (tile) tile.classList.add('pop');
     const li = $(`.ep[data-ep="${k}"]`);
     const b = li?.querySelector('.chk');
     if (b && b.getAttribute('aria-pressed') === 'true') { b.classList.add('pop'); li.classList.add('flash'); }
@@ -1510,6 +1543,7 @@ const ACTIONS = {
   'sb-add': () => { ui.draft.manualSeasons.push({ count: ui.draft.manualSeasons.at(-1)?.count || 10 }); $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
   'sb-remove': el => { ui.draft.manualSeasons.splice(+el.dataset.i, 1); if (ui.draft.seen.season > ui.draft.manualSeasons.length) ui.draft.seen = { season: 0, episode: 0 }; $('#sbSection').innerHTML = seasonBuilderHTML(ui.draft); $('#seenSection').innerHTML = seenHTML(ui.draft); },
 
+  'ep-view': el => { ui.epView = el.dataset.view; render(); },
   'ep-toggle': el => { const s = getShow(el.dataset.show); if (s) toggleEpisode(s, el.dataset.key); },
   'ep-prev': el => { const s = getShow(el.dataset.show); if (s) markPrevious(s, el.dataset.key); },
   'ep-edit': el => { const s = getShow(el.dataset.show); if (s) openEpisodeEditor(s, el.dataset.key); },

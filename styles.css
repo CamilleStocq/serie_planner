@@ -695,17 +695,6 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 .date-badge.today { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
 .date-badge.today span { color: var(--pop); }
 
-/* Fiche : halo de couleur tiré de l'affiche */
-.detail-hero { position: relative; isolation: isolate; }
-.detail-wash {
-  position: absolute; z-index: -1; left: -60px; top: -80px; width: min(720px, 90vw); height: 420px;
-  background-size: cover; background-position: center;
-  filter: blur(70px) saturate(1.5); opacity: .32; pointer-events: none;
-  border-radius: 50%;
-}
-[data-theme="dark"] .detail-wash { opacity: .28; }
-.detail-hero .poster { box-shadow: 0 18px 40px -16px rgba(30, 28, 44, .45); }
-
 /* Fiche : progression par saison */
 .season-strip { display: flex; gap: 3px; margin-top: 16px; height: 10px; }
 .ss-seg { position: relative; display: block; height: 100%; min-width: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
@@ -716,3 +705,123 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 /* Accueil vide : illustration */
 .tv-illu { width: 150px; height: auto; margin-bottom: 4px; animation: tvIn 600ms var(--ease) both; }
 @keyframes tvIn { from { opacity: 0; transform: translateY(10px) rotate(-4deg); } }
+
+/* =========================================================
+   Passe très visuelle
+   ========================================================= */
+
+/* Anneau de progression */
+.ring-badge { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; }
+.ring-badge > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-badge circle { fill: none; stroke-width: 4; }
+.ring-badge .t { stroke: var(--surface-3); }
+.ring-badge .v { stroke: var(--pop); stroke-linecap: round; transition: stroke-dashoffset 600ms var(--ease); }
+.ring-badge.done .v { stroke: var(--ok); }
+.ring-badge b { position: relative; font-size: 11.5px; font-weight: 800; display: grid; place-items: center; }
+.ring-badge.done b { color: var(--ok); }
+.ring-badge.on-poster, .ring-badge.pcard-ring { background: rgba(20, 18, 30, .72); border-radius: 50%; color: #fff; }
+.ring-badge.on-poster .t, .ring-badge.pcard-ring .t { stroke: rgba(255, 255, 255, .22); }
+.ring-badge.on-poster.done b { color: #fff; }
+.ring-badge.on-poster { position: absolute; left: 8px; bottom: 8px; z-index: 2; }
+.ring-badge.season-ring { width: 38px; height: 38px; }
+
+/* Bibliothèque : affiches plus grandes, plus d'image que de texte */
+.grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
+@media (max-width: 560px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card .poster { border-radius: 16px; box-shadow: 0 10px 24px -14px rgba(30, 28, 44, .5); }
+.card-link { border-radius: 16px; }
+.card-quick { bottom: 8px; width: 42px; height: 42px; background: var(--pop); color: #1e1c2c; box-shadow: 0 6px 16px -6px rgba(0, 0, 0, .45); }
+.card-title { margin-top: 2px; }
+
+/* Accueil : bannière cinéma */
+.feature { min-height: 340px; padding: 28px; border-radius: 28px; }
+.feature-title { font-size: clamp(30px, 4.4vw, 46px); }
+@media (max-width: 560px) { .feature { min-height: 300px; padding: 20px; } }
+
+/* Accueil : rangée d'affiches */
+.prail { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: 14px; overflow-x: auto; padding: 14px 2px 8px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
+.pcard { position: relative; scroll-snap-align: start; }
+.pcard-link { position: relative; display: block; border-radius: 18px; overflow: hidden; box-shadow: 0 12px 26px -14px rgba(30, 28, 44, .55); transition: transform var(--med) var(--ease); }
+.pcard:hover .pcard-link { transform: translateY(-3px); }
+.pcard-link .poster { border-radius: 0; }
+.pcard-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20, 18, 30, 0) 45%, rgba(20, 18, 30, .88)); }
+.pcard-info { position: absolute; left: 12px; right: 56px; bottom: 12px; display: flex; flex-direction: column; color: #fff; }
+.pcard-info b { font-size: 15px; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pcard-info span { font-size: 13px; opacity: .85; font-weight: 600; margin-top: 2px; }
+.pcard-ring { position: absolute; top: 10px; left: 10px; }
+.pcard-pf { position: absolute; top: 14px; right: 12px; }
+.pcard-check {
+  position: absolute; right: 10px; bottom: 12px; width: 42px; height: 42px; border-radius: 50%; border: 0;
+  display: grid; place-items: center; background: var(--pop); color: #1e1c2c;
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, .5); transition: transform var(--fast), background var(--fast), color var(--fast);
+}
+.pcard-check .ic { stroke-width: 2.8; }
+.pcard-check:hover { background: var(--ok); color: #fff; transform: scale(1.06); }
+
+/* Fiche : bannière + affiche par-dessus */
+.detail-hero { grid-template-columns: 210px minmax(0, 1fr); column-gap: 32px; row-gap: 0; }
+.detail-banner {
+  grid-column: 1 / -1; height: 300px; border-radius: 28px; margin-bottom: -96px;
+  background-size: cover; background-position: center 25%; position: relative; overflow: hidden;
+}
+.detail-banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20, 18, 30, 0) 40%, rgba(20, 18, 30, .35)); }
+.detail-banner.from-poster { background-size: 160%; filter: saturate(1.2); }
+.detail-banner.from-poster::after { backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); background: rgba(20, 18, 30, .12); }
+.detail-hero > .poster { position: relative; z-index: 1; margin-left: 24px; border: 5px solid var(--bg); border-radius: 20px; box-shadow: 0 20px 40px -18px rgba(30, 28, 44, .6); }
+.detail-hero > .detail-info { padding-top: 112px; padding-right: 8px; }
+@media (max-width: 760px) {
+  .detail-hero { grid-template-columns: 116px minmax(0, 1fr); column-gap: 14px; }
+  .detail-banner { height: 190px; margin-bottom: -60px; border-radius: 22px; }
+  .detail-hero > .poster { margin-left: 12px; border-width: 4px; border-radius: 16px; }
+  .detail-hero .detail-head { padding-top: 68px; }
+  .detail-hero .overview-wrap { margin-top: 16px; }
+}
+
+/* Bascule grille / liste */
+.view-toggle { display: inline-flex; padding: 3px; border-radius: 99px; background: var(--surface-2); }
+.view-toggle button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 99px; background: none; color: var(--muted); font-weight: 600; font-size: 14px; }
+.view-toggle button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
+
+/* Légende */
+.ep-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 14px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.lg { display: inline-flex; align-items: center; gap: 7px; }
+.lg::before { content: ""; width: 16px; height: 16px; border-radius: 5px; box-sizing: border-box; }
+.lg.watched::before { background: var(--ok); }
+.lg.available::before { background: var(--pop); }
+.lg.upcoming::before { background: var(--info-soft); border: 2px solid var(--info); }
+.lg.tba::before { border: 2px dashed var(--line-2); }
+
+/* Grille d'épisodes */
+.ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 10px 8px; padding: 16px 14px 6px; border-top: 1px solid var(--line); }
+.ep-tile {
+  position: relative; aspect-ratio: 1; min-height: 54px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border-radius: 14px; border: 2px solid transparent; padding: 0;
+  font-weight: 800; transition: transform var(--fast), background var(--fast), box-shadow var(--fast);
+}
+.ep-tile b { font-size: 17px; line-height: 1; }
+.ep-tile small { font-size: 10.5px; font-weight: 700; opacity: .9; }
+.ep-tile .ic { width: 14px; height: 14px; stroke-width: 3; }
+.ep-tile.is-watched { background: var(--ok); color: #fff; }
+.ep-tile.is-available { background: var(--pop); color: #1e1c2c; }
+.ep-tile.is-upcoming { background: var(--info-soft); color: var(--info); border-color: var(--info); cursor: not-allowed; }
+.ep-tile.is-tba { background: transparent; color: var(--muted); border: 2px dashed var(--line-2); }
+.ep-tile:not(:disabled):hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .45); }
+.ep-tile.is-available:hover { background: var(--ok); color: #fff; }
+.ep-tile.next { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--ink); }
+.ep-tile.next::after { content: "Suivant"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); padding: 1px 6px; border-radius: 99px; background: var(--ink); color: var(--on-ink); font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+.ep-tile.pop { animation: pop 380ms var(--ease); }
+.season-toggle { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+.add-season { margin-top: 12px; }
+
+/* Calendrier : affiches plus présentes */
+.rel { grid-template-columns: 62px minmax(0, 1fr) auto; }
+.rel .poster { border-radius: 10px; }
+@media (max-width: 560px) { .rel { grid-template-columns: 54px minmax(0, 1fr); } }
+
+/* Bibliothèque mobile : recherche puis filtres sur deux colonnes */
+@media (max-width: 560px) {
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar .search-box { grid-column: 1 / -1; }
+  .toolbar .select { width: 100%; min-width: 0; font-size: 14px; }
+}
