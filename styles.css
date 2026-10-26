@@ -620,3 +620,99 @@ h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
+
+/* =========================================================
+   Détails graphiques
+   ========================================================= */
+
+/* Onglets : pastille de catégorie */
+.tab-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* Accueil : carte « prochain épisode » */
+.feature {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; align-items: flex-end; gap: 20px;
+  min-height: 260px; padding: 24px; border-radius: 24px;
+  color: #fff; background: #1e1c2c;
+}
+.feature-bg { position: absolute; inset: 0; z-index: -2; background-size: cover; background-position: center 30%; transform: scale(1.02); transition: transform 700ms var(--ease); }
+.feature:hover .feature-bg { transform: scale(1.06); }
+.feature::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(20,18,30,0) 20%, rgba(20,18,30,.55) 55%, rgba(20,18,30,.92)); }
+.feature-link { position: absolute; inset: 0; z-index: 0; }
+.feature-body { position: relative; z-index: 1; flex: 1; min-width: 0; pointer-events: none; }
+.feature-kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: rgba(255,255,255,.85); }
+.feature-kicker .pf { box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+.feature-title { font-size: clamp(26px, 3.6vw, 36px); font-weight: 800; line-height: 1.1; margin-top: 8px; overflow-wrap: anywhere; }
+.feature-ep { margin: 6px 0 0; font-size: 16px; color: rgba(255,255,255,.88); }
+.feature-progress { display: flex; align-items: center; gap: 10px; margin-top: 14px; max-width: 320px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,.8); }
+.feature-progress .bar { flex: 1; background: rgba(255,255,255,.22); }
+.feature + .up-list { margin-top: 10px; }
+.big-check.on-image { position: relative; z-index: 1; width: 76px; height: 76px; border: 0; background: var(--pop); color: #1e1c2c; font-size: 13.5px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.5); }
+.big-check.on-image .ic { width: 26px; height: 26px; }
+.big-check.on-image:hover { background: var(--ok); color: #fff; }
+@media (max-width: 560px) {
+  .feature { min-height: 230px; padding: 18px; border-radius: 20px; }
+  .big-check.on-image { width: 64px; height: 64px; }
+}
+
+/* Accueil : bande de la semaine */
+.week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.day-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 6px 10px; border-radius: 16px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line);
+  transition: border-color var(--fast), transform var(--fast);
+}
+.day-tile:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.day-tile.today { background: var(--pop-soft); border-color: transparent; }
+.day-name { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.day-tile.today .day-name { color: var(--pop-ink); }
+.day-num { font-size: 24px; font-weight: 800; line-height: 1.1; }
+.day-posters { display: flex; justify-content: center; height: 46px; margin: 8px 0 6px; }
+.day-posters .poster { width: 31px; flex: none; border-radius: 6px; box-shadow: 0 0 0 2px var(--surface); }
+.day-tile.today .day-posters .poster { box-shadow: 0 0 0 2px var(--pop-soft); }
+.day-posters .poster + .poster { margin-left: -12px; }
+.day-posters .poster-fallback { padding: 0; align-items: center; justify-content: center; }
+.day-posters .poster-fallback b, .day-posters .poster-fallback .ic { display: none; }
+.day-count { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.day-count.empty-day { color: var(--line-2); }
+.day-tile:not(.has) .day-posters::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); align-self: center; }
+@media (max-width: 700px) {
+  .week { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: none; }
+  .week::-webkit-scrollbar { display: none; }
+  .day-tile { flex: 0 0 84px; scroll-snap-align: start; }
+}
+
+/* Calendrier : pastille de date */
+.day-head { align-items: center; gap: 12px; }
+.date-badge {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 46px; height: 50px; border-radius: 12px; flex: none;
+  background: var(--surface); border: 1px solid var(--line); line-height: 1;
+}
+.date-badge span { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: capitalize; }
+.date-badge b { font-size: 20px; font-weight: 800; margin-top: 3px; }
+.date-badge.today { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.date-badge.today span { color: var(--pop); }
+
+/* Fiche : halo de couleur tiré de l'affiche */
+.detail-hero { position: relative; isolation: isolate; }
+.detail-wash {
+  position: absolute; z-index: -1; left: -60px; top: -80px; width: min(720px, 90vw); height: 420px;
+  background-size: cover; background-position: center;
+  filter: blur(70px) saturate(1.5); opacity: .32; pointer-events: none;
+  border-radius: 50%;
+}
+[data-theme="dark"] .detail-wash { opacity: .28; }
+.detail-hero .poster { box-shadow: 0 18px 40px -16px rgba(30, 28, 44, .45); }
+
+/* Fiche : progression par saison */
+.season-strip { display: flex; gap: 3px; margin-top: 16px; height: 10px; }
+.ss-seg { position: relative; display: block; height: 100%; min-width: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+.ss-seg > span { display: block; height: 100%; background: var(--pop); border-radius: 99px; }
+.ss-seg.done > span { background: var(--ok); }
+.season-strip-legend { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* Accueil vide : illustration */
+.tv-illu { width: 150px; height: auto; margin-bottom: 4px; animation: tvIn 600ms var(--ease) both; }
+@keyframes tvIn { from { opacity: 0; transform: translateY(10px) rotate(-4deg); } }

@@ -395,6 +395,7 @@ function viewHome() {
 
   if (!state.shows.length) {
     return `<section class="welcome">
+      ${tvIllustration()}
       <h1 class="page-title">Vos séries, sans rien oublier.</h1>
       <p class="welcome-text">Ajoutez ce que vous regardez, cochez les épisodes au fur et à mesure, et voyez d'un coup d'œil ce qui sort bientôt.</p>
       <div class="welcome-actions"><button class="btn primary lg" data-act="add-open">${icon('search')}Rechercher une série</button>
@@ -420,7 +421,7 @@ function viewHome() {
     .filter(x => ['watching', 'paused'].includes(x.s.status) && x.st.next)
     .sort((a, b) => (b.s.lastWatchedAt || b.s.addedAt) - (a.s.lastWatchedAt || a.s.addedAt));
   const resumeHTML = resume.length
-    ? `<ul class="up-list">${resume.map(({ s, st }) => upRow(s, st)).join('')}</ul>`
+    ? featureCard(resume[0].s, resume[0].st) + (resume.length > 1 ? `<ul class="up-list">${resume.slice(1).map(({ s, st }) => upRow(s, st)).join('')}</ul>` : '')
     : emptyHTML({ sm: true, ic: 'play', title: watching.length ? 'Vous êtes à jour' : 'Rien en cours', text: watching.length ? 'Aucun nouvel épisode à regarder pour le moment.' : 'Commencez une série depuis votre bibliothèque pour la retrouver ici.' });
 
   const upcomingHTML = `<section class="section"><div class="section-head"><h2 class="section-title">Bientôt</h2><a class="section-link" href="#/calendar">Tout le calendrier ${icon('chevron', 'sm')}</a></div>
@@ -430,7 +431,63 @@ function viewHome() {
   const plannedHTML = planned.length ? `<section class="section"><div class="section-head"><h2 class="section-title">À commencer</h2><a class="section-link" href="#/library" data-act="lib-goto" data-cat="planned">Tout voir ${icon('chevron', 'sm')}</a></div>
     <div class="grid">${planned.map(({ s, st }) => cardHTML(s, st, false)).join('')}</div></section>` : '';
 
-  return head + `<section class="section first"><div class="section-head"><h2 class="section-title">À regarder maintenant</h2></div>${resumeHTML}</section>` + upcomingHTML + plannedHTML;
+  return head + weekStrip(rel) + `<section class="section"><div class="section-head"><h2 class="section-title">À regarder maintenant</h2></div>${resumeHTML}</section>` + upcomingHTML + plannedHTML;
+}
+function featureCard(s, st) {
+  const e = st.next;
+  const bg = imgUrl(s.backdrop, 'w780') || imgUrl(s.poster, 'w500');
+  const pf = showPlatforms(s)[0];
+  return `<article class="feature" data-card="${s.id}">
+    <div class="feature-bg" style="${bg ? `background-image:url('${esc(bg)}')` : `background:linear-gradient(135deg,hsl(${hueOf(s.title)} 45% 45%),hsl(${hueOf(s.title) + 50} 45% 25%))`}"></div>
+    <a class="feature-link" href="#/show/${s.id}" aria-label="Ouvrir ${esc(s.title)}"></a>
+    <div class="feature-body">
+      <span class="feature-kicker">${pf ? pfBadge(pf.p) : ''}Votre prochain épisode</span>
+      <h3 class="feature-title">${esc(s.title)}</h3>
+      <p class="feature-ep">${epCode(e)}${e.title ? ` – ${esc(e.title)}` : ''}${e.runtime ? ` · ${fmtRuntime(e.runtime)}` : ''}</p>
+      <div class="feature-progress">${bar(st.pct)}<span>${st.watched} / ${st.total}</span></div>
+    </div>
+    <button class="big-check on-image" data-act="next-watch" data-show="${s.id}" aria-label="Marquer ${epCode(e)} de ${esc(s.title)} comme vu">${icon('check')}<span>Vu</span></button>
+  </article>`;
+}
+function weekStrip(rel) {
+  const today = startOfDay(new Date());
+  const items = [...rel.upcoming];
+  const fmtDay = new Intl.DateTimeFormat('fr-FR', { weekday: 'short' });
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today.getTime() + i * DAY);
+    const list = items.filter(x => dayDiff(x.r, d) === 0);
+    const shows = [...new Map(list.map(x => [x.show.id, x.show])).values()];
+    const label = i === 0 ? "Aujourd'hui" : fmtDay.format(d).replace('.', '');
+    return `<a class="day-tile ${i === 0 ? 'today' : ''} ${list.length ? 'has' : ''}" href="#/calendar" aria-label="${esc(fmtDate(d, 'long'))} : ${list.length ? plural(list.length, 'sortie', 'sorties') : 'aucune sortie'}">
+      <span class="day-name">${esc(label)}</span><span class="day-num">${d.getDate()}</span>
+      <span class="day-posters">${shows.slice(0, 3).map(sh => posterHTML(sh, 'w92')).join('')}</span>
+      ${list.length ? `<span class="day-count">${plural(list.length, 'épisode', 'épisodes')}</span>` : '<span class="day-count empty-day">–</span>'}
+    </a>`;
+  }).join('');
+  return `<section class="section first"><div class="section-head"><h2 class="section-title">Cette semaine</h2><a class="section-link" href="#/calendar">Calendrier ${icon('chevron', 'sm')}</a></div><div class="week">${days}</div></section>`;
+}
+function dateBadge(d) {
+  const wd = new Intl.DateTimeFormat('fr-FR', { weekday: 'short' }).format(d).replace('.', '');
+  return `<span class="date-badge ${dayDiff(d, new Date()) === 0 ? 'today' : ''}" aria-hidden="true"><span>${esc(wd)}</span><b>${d.getDate()}</b></span>`;
+}
+function seasonStrip(show) {
+  return `<div class="season-strip" aria-label="Progression par saison">${show.seasons.map(se => {
+    const n = se.episodes.length || 1;
+    const w = se.episodes.filter(e => e.watched).length;
+    const pct = Math.round((w / n) * 100);
+    return `<span class="ss-seg ${pct === 100 ? 'done' : ''}" style="flex:${n}" title="Saison ${se.number} : ${w}/${se.episodes.length}"><span style="width:${pct}%"></span></span>`;
+  }).join('')}</div><div class="season-strip-legend"><span>S${show.seasons[0].number}</span><span>S${show.seasons.at(-1).number}</span></div>`;
+}
+function tvIllustration() {
+  return `<svg class="tv-illu" viewBox="0 0 200 150" aria-hidden="true">
+    <path d="M78 22 98 40M122 22 102 40" stroke="var(--ink)" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="76" cy="20" r="6" fill="var(--pop)"/><circle cx="124" cy="20" r="6" fill="var(--pop)"/>
+    <rect x="22" y="40" width="156" height="98" rx="22" fill="var(--ink)"/>
+    <rect x="34" y="52" width="108" height="74" rx="14" fill="var(--pop)"/>
+    <path d="M78 74v30l26-15z" fill="var(--ink)"/>
+    <circle cx="160" cy="70" r="7" fill="var(--surface)"/><circle cx="160" cy="92" r="7" fill="var(--surface)"/>
+    <rect x="152" y="108" width="16" height="6" rx="3" fill="var(--surface)"/>
+  </svg>`;
 }
 function upRow(s, st) {
   const e = st.next;
@@ -488,7 +545,7 @@ function viewLibrary() {
       <button class="btn primary" data-act="add-open">${icon('plus')}Ajouter</button></header>
     <div class="seg" role="tablist" style="margin-bottom:16px">
       <button role="tab" class="${L.cat === 'all' ? 'on' : ''}" data-act="lib-cat" data-cat="all" aria-selected="${L.cat === 'all'}">Toutes <span class="count">${state.shows.length}</span></button>
-      ${CATEGORIES.map(c => `<button role="tab" class="${L.cat === c.id ? 'on' : ''}" data-act="lib-cat" data-cat="${c.id}" aria-selected="${L.cat === c.id}">${c.label} <span class="count">${counts[c.id]}</span></button>`).join('')}
+      ${CATEGORIES.map(c => `<button role="tab" class="${L.cat === c.id ? 'on' : ''}" data-act="lib-cat" data-cat="${c.id}" aria-selected="${L.cat === c.id}"><span class="tab-dot" style="background:${c.color}"></span>${c.label} <span class="count">${counts[c.id]}</span></button>`).join('')}
     </div>
     <div class="toolbar">
       <div class="search-box">${icon('search')}<label class="visually-hidden" for="libSearch">Rechercher dans la bibliothèque</label><input id="libSearch" class="input" type="search" placeholder="Rechercher une série…" value="${esc(L.q)}" data-input="lib-q" autocomplete="off"></div>
@@ -557,7 +614,7 @@ function viewCalendar() {
     if (!g || g.k !== k) { g = { k, d: startOfDay(it.r), items: [] }; groups.push(g); }
     g.items.push(it);
   }
-  const groupsHTML = groups.map(g => `<section class="day-group"><div class="day-head"><h3>${esc(relDayLabel(g.d) || fmtDate(g.d, 'long'))}</h3>${relDayLabel(g.d) ? `<span class="muted">${esc(fmtDate(g.d, 'long'))}</span>` : ''}<span class="muted">${plural(g.items.length, 'épisode', 'épisodes')}</span></div>
+  const groupsHTML = groups.map(g => `<section class="day-group"><div class="day-head">${dateBadge(g.d)}<h3>${esc(relDayLabel(g.d) || fmtDate(g.d, 'long'))}</h3>${relDayLabel(g.d) ? `<span class="muted">${esc(fmtDate(g.d, 'long'))}</span>` : ''}<span class="muted">${plural(g.items.length, 'épisode', 'épisodes')}</span></div>
     <div class="rel-list">${g.items.map(relItem).join('')}</div></section>`).join('');
 
   const freshHTML = fresh.length ? `<section class="day-group"><div class="day-head"><h3>Disponibles maintenant</h3><span class="muted">Sortis récemment, pas encore vus</span></div>
@@ -607,7 +664,9 @@ function viewShow(id) {
 
   const stars = [1, 2, 3, 4, 5].map(n => `<button class="star ${show.rating >= n ? 'on' : ''}" data-act="show-rating" data-show="${show.id}" data-n="${n}" aria-label="Noter ${n} sur 5" aria-pressed="${show.rating >= n}">${icon('star', 'fill')}</button>`).join('');
 
+  const wash = imgUrl(show.poster, 'w342');
   const hero = `<section class="detail-hero">
+    ${wash ? `<div class="detail-wash" style="background-image:url('${esc(wash)}')" aria-hidden="true"></div>` : `<div class="detail-wash" style="background:hsl(${hueOf(show.title)} 60% 60%)" aria-hidden="true"></div>`}
     ${posterHTML(show, 'w500')}
     <div class="detail-info">
       <div class="detail-head" style="display:flex;flex-direction:column;gap:12px">
@@ -654,9 +713,10 @@ function viewShow(id) {
         <div class="ring ${done ? 'done' : ''}"><svg viewBox="0 0 100 100">
           <circle class="track" cx="50" cy="50" r="40"/><circle class="val" cx="50" cy="50" r="40" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - st.pct / 100)}"/></svg>
           <div class="ring-label">${st.pct}%</div></div>
-        <div><div style="font:700 18px/1.2 var(--display)">${st.watched} / ${st.total}</div><div class="muted" style="font-size:13.5px">épisodes regardés</div>
-          ${st.total ? `<div class="muted" style="font-size:13.5px;margin-top:4px">Saison actuelle : <b style="color:var(--text)">${st.currentSeason}</b></div>` : ''}</div>
+        <div><div style="font-weight:700;font-size:18px">${st.watched} / ${st.total}</div><div class="muted" style="font-size:13.5px">épisodes regardés</div>
+          ${st.total ? `<div class="muted" style="font-size:13.5px;margin-top:4px">Saison actuelle : <b style="color:var(--ink)">${st.currentSeason}</b></div>` : ''}</div>
       </div>
+      ${show.seasons.length > 1 ? seasonStrip(show) : ''}
       <div class="kv">
         <div><b>${st.remaining}</b><span>restants</span></div>
         <div><b>${st.available}</b><span>disponibles à voir</span></div>
